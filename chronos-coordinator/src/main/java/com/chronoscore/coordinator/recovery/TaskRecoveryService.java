@@ -22,8 +22,10 @@ import com.chronoscore.coordinator.recovery.lease.ExecutionLeaseService;
 import com.chronoscore.coordinator.recovery.lease.TaskExecutionLease;
 import com.chronoscore.coordinator.recovery.policy.RetryPolicy;
 import com.chronoscore.coordinator.recovery.timeout.TaskTimeoutService;
+import com.chronoscore.coordinator.workflow.service.WorkflowExecutionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +56,9 @@ public class TaskRecoveryService {
     private final TaskTimeoutService timeoutService;
     private final DistributedLockService lockService;
 
+    @Autowired(required = false)
+    private WorkflowExecutionService workflowExecutionService;
+
     public TaskRecoveryService(TaskRepository taskRepository,
                                ExecutionAttemptRepository attemptRepository,
                                TaskAuditRepository auditRepository,
@@ -72,6 +77,10 @@ public class TaskRecoveryService {
         this.workerRegistry = Objects.requireNonNull(workerRegistry, "workerRegistry must not be null");
         this.timeoutService = Objects.requireNonNull(timeoutService, "timeoutService must not be null");
         this.lockService = Objects.requireNonNull(lockService, "lockService must not be null");
+    }
+
+    public void setWorkflowExecutionService(WorkflowExecutionService workflowExecutionService) {
+        this.workflowExecutionService = workflowExecutionService;
     }
 
     /**
@@ -169,6 +178,16 @@ public class TaskRecoveryService {
 
             log.info("Task '{}' succeeded on worker '{}' (attempt #{}, version {})",
                     taskId, workerId, reportedAttemptNumber, persistedTask.getVersion());
+
+            if (workflowExecutionService != null) {
+                try {
+                    workflowExecutionService.onTaskCompleted(taskId, true, null, null);
+                } catch (Exception ex) {
+                    log.error("Failed to notify workflow execution service for succeeded task '{}': {}",
+                            taskId, ex.getMessage(), ex);
+                }
+            }
+
             return true;
         } else {
             // Failure flow
@@ -227,6 +246,16 @@ public class TaskRecoveryService {
 
             log.info("Task '{}' failed on worker '{}' (attempt #{}): transitioned to {} (version {})",
                     taskId, workerId, reportedAttemptNumber, nextStatus, persistedTask.getVersion());
+
+            if (workflowExecutionService != null && nextStatus == TaskStatus.DLQ) {
+                try {
+                    workflowExecutionService.onTaskCompleted(taskId, false, errorCode, errorMessage);
+                } catch (Exception ex) {
+                    log.error("Failed to notify workflow execution service for DLQ task '{}': {}",
+                            taskId, ex.getMessage(), ex);
+                }
+            }
+
             return true;
         }
     }
@@ -419,6 +448,16 @@ public class TaskRecoveryService {
 
         log.info("Recovered task '{}' (attempt #{}): transitioned to {} (version {})",
                 taskId, attemptNumber, nextStatus, persistedTask.getVersion());
+
+        if (workflowExecutionService != null && nextStatus == TaskStatus.DLQ) {
+            try {
+                workflowExecutionService.onTaskCompleted(taskId, false, errorCode, errorMessage);
+            } catch (Exception ex) {
+                log.error("Failed to notify workflow execution service for recovered DLQ task '{}': {}",
+                        taskId, ex.getMessage(), ex);
+            }
+        }
+
         return true;
     }
 }

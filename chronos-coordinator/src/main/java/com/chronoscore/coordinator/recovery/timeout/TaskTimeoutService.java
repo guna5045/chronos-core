@@ -18,9 +18,11 @@ import com.chronoscore.coordinator.persistence.repository.TaskAuditRepository;
 import com.chronoscore.coordinator.persistence.repository.TaskRepository;
 import com.chronoscore.coordinator.recovery.lease.ExecutionLeaseService;
 import com.chronoscore.coordinator.recovery.policy.RetryPolicy;
+import com.chronoscore.coordinator.workflow.service.WorkflowExecutionService;
 import com.google.protobuf.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +53,9 @@ public class TaskTimeoutService {
     private final WorkerDispatchClient dispatchClient;
     private final DistributedLockService lockService;
 
+    @Autowired(required = false)
+    private WorkflowExecutionService workflowExecutionService;
+
     public TaskTimeoutService(TaskRepository taskRepository,
                               ExecutionAttemptRepository attemptRepository,
                               TaskAuditRepository auditRepository,
@@ -69,6 +74,10 @@ public class TaskTimeoutService {
         this.workerRegistry = Objects.requireNonNull(workerRegistry, "workerRegistry must not be null");
         this.dispatchClient = Objects.requireNonNull(dispatchClient, "dispatchClient must not be null");
         this.lockService = Objects.requireNonNull(lockService, "lockService must not be null");
+    }
+
+    public void setWorkflowExecutionService(WorkflowExecutionService workflowExecutionService) {
+        this.workflowExecutionService = workflowExecutionService;
     }
 
     /**
@@ -213,6 +222,16 @@ public class TaskTimeoutService {
 
         log.info("Task '{}' timeout recovery complete: transitioned to {} (version {})",
                 taskId, nextStatus, persistedTask.getVersion());
+
+        if (workflowExecutionService != null && nextStatus == TaskStatus.DLQ) {
+            try {
+                workflowExecutionService.onTaskCompleted(taskId, false, "EXECUTION_TIMEOUT", "Task execution timed out");
+            } catch (Exception ex) {
+                log.error("Failed to notify workflow execution service for timed out DLQ task '{}': {}",
+                        taskId, ex.getMessage(), ex);
+            }
+        }
+
         return true;
     }
 

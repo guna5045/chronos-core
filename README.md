@@ -70,7 +70,7 @@ chronos-core/
 
 ## 6. Development Status
 
-> **Current Status**: **Phase 07: Fault Tolerance, Retries & Task Recovery** Completed
+> **Current Status**: **Phase 08: Workflow & DAG Orchestration** Completed
 
 - [x] **Phase 01: Project Foundation & Repository Setup**
 - [x] **Phase 02: Core Domain Model & Shared Contracts**
@@ -79,6 +79,7 @@ chronos-core/
 - [x] **Phase 05: Worker Cluster & gRPC Communication**
 - [x] **Phase 06: Distributed Scheduling & Task Distribution**
 - [x] **Phase 07: Fault Tolerance, Retries & Task Recovery**
+- [x] **Phase 08: Workflow & DAG Orchestration**
 
 ---
 
@@ -91,7 +92,7 @@ chronos-core/
 5. **Phase 05: Worker Cluster & gRPC Communication** *(Completed)*
 6. **Phase 06: Distributed Scheduling & Task Distribution** *(Completed)*
 7. **Phase 07: Fault Tolerance, Retries & Task Recovery** *(Completed)*
-8. **Phase 08: Workflow DAG Execution Engine & Versioning**
+8. **Phase 08: Workflow & DAG Orchestration** *(Completed)*
 9. **Phase 09: REST API Gateway & Security**
 10. **Phase 10: Engineering Control Plane (React Dashboard)**
 11. **Phase 11: AI Workflow & Operations Agents**

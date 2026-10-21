@@ -1,8 +1,8 @@
 # Chronos Core - Architectural Specification
 
 ## Status
-- **Current Phase**: Phase 07 (Fault Tolerance, Retries & Task Recovery)
-- **Document Version**: 0.7.0
+- **Current Phase**: Phase 08 (Workflow & DAG Orchestration)
+- **Document Version**: 0.8.0
 
 ---
 
@@ -618,6 +618,52 @@ Chronos Core guarantees:
 > **At-least-once delivery with idempotency, durable state transitions, task execution leases, retry/backoff, fencing-based stale execution protection, worker failure detection, and dead-letter handling.**
 
 Chronos Core does **NOT** provide, nor does it claim, exactly-once execution.
+
+---
+
+## 10. Workflow & DAG Orchestration Engine (`chronos-coordinator::workflow`)
+
+Phase 08 introduces the workflow orchestration layer for directed acyclic graph (DAG) task composition without duplicating the underlying execution scheduler.
+
+```
+Workflow Definition
+        │
+        ▼
+Workflow Version (Immutable)
+        │
+        ▼
+Workflow Execution (Instance)
+        │
+        ▼
+Dependency Engine
+        │ (activates eligible nodes)
+        ▼
+Eligible Chronos Tasks (QUEUED)
+        │
+        ▼
+Phase 06 Scheduler
+        │
+        ▼
+Consistent Hashing & Capacity Tracking
+        │
+        ▼
+gRPC Virtual-Thread Workers
+        │
+        ▼
+Phase 07 Recovery & Retries
+        │ (on logical success / terminal DLQ)
+        ▼
+Workflow State Update & Downstream Activation
+```
+
+### 10.1 Key Guarantees & Architectural Boundaries
+1. **No Duplicate Execution Engine**: Workflow nodes materialize as standard `Task` entities with `TaskStatus.QUEUED`. The existing Phase 06 leader-aware scheduler dispatches them, and Phase 07 monitors their execution leases.
+2. **Deterministic DAG Validation**: Cycle detection via DFS 3-coloring and deterministic topological ordering via Kahn's algorithm with lexicographical tie-breaking (`WorkflowDagValidator`).
+3. **Immutable Workflow Versions**: Once published, workflow definitions and edges cannot be modified. New iterations must be published as distinct versions.
+4. **Execution Version Pinning**: Running executions are permanently bound to their starting `versionId`, unaffected by subsequent version publications.
+5. **Atomic Compare-and-Swap Activation**: `claimNodeForActivation` uses row-level database conditional updates (`UPDATE ... WHERE status = 'PENDING'`) to guarantee that concurrent dependency completions activate downstream nodes exactly once.
+6. **Deterministic Failure Propagation**: Terminal task failure (`DLQ` or unrecoverable error) marks all downstream descendant nodes as `SKIPPED` and transitions the workflow execution to `FAILED`.
+7. **Cooperative Cancellation**: Workflow cancellation marks non-terminal nodes `CANCELLED` and issues cooperative gRPC cancellation to active worker nodes via `WorkerDispatchClient`.
 
 
 

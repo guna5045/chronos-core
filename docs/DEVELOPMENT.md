@@ -1,7 +1,7 @@
 # Chronos Core - Developer Setup & Contribution Guide
 
 ## Status
-- **Current Phase**: Phase 07 (Fault Tolerance, Retries & Task Recovery)
+- **Current Phase**: Phase 08 (Workflow & DAG Orchestration)
 
 ---
 
@@ -83,6 +83,8 @@ Migration scripts are located at:
 - `V2__create_execution_attempts.sql`: Physical execution attempt history and foreign key constraints.
 - `V3__create_task_audit_log.sql`: Append-only task state transition audit log.
 - `V4__create_outbox_events.sql`: Transactional outbox event staging table.
+- `V5__create_task_leases.sql`: Distributed task execution lease management and worker fencing.
+- `V6__create_workflow_orchestration.sql`: Workflow definitions, immutable versions, DAG nodes, edges, workflow executions, node execution states, and workflow audit log.
 
 ### 3.4 Integration Testing & Testcontainers
 - When Docker is available, `PostgreSqlTestcontainersIT` verifies Flyway migrations and persistence operations against real PostgreSQL 16 in an isolated container.
@@ -273,6 +275,21 @@ mvn test -Dtest=DlqServiceTest -pl chronos-coordinator
 
 # Run Recovery Concurrency Simulation (multi-threaded recovery conflict resolution)
 mvn test -Dtest=RecoveryConcurrencyIntegrationTest -pl chronos-coordinator
+
+# Run DAG Validation and Cycle Detection Tests (DFS 3-coloring, Kahn's topological sort)
+mvn test -Dtest=WorkflowDagValidatorTest -pl chronos-common
+
+# Run Workflow State Machine Tests (Workflow and Node status transitions)
+mvn test -Dtest=WorkflowStateMachineTest,WorkflowNodeStateMachineTest -pl chronos-common
+
+# Run Workflow Service Tests (draft, publication, immutability, deprecation)
+mvn test -Dtest=WorkflowServiceTest -pl chronos-coordinator
+
+# Run Workflow Execution Service Tests (fan-out, fan-in, failure propagation, cancellation)
+mvn test -Dtest=WorkflowExecutionServiceTest -pl chronos-coordinator
+
+# Run Workflow Concurrency Integration Tests (atomic fan-in activation, duplicate idempotency)
+mvn test -Dtest=WorkflowConcurrencyIntegrationTest -pl chronos-coordinator
 ```
 
 ---

@@ -1,7 +1,7 @@
 # Chronos Core - Failure Modes & Resiliency Analysis
 
 ## Status
-- **Current Phase**: Phase 07 (Fault Tolerance, Retries & Task Recovery)
+- **Current Phase**: Phase 08 (Workflow & DAG Orchestration)
 
 ---
 
@@ -88,14 +88,26 @@
 
 ---
 
-## 7. Distributed System Failure Modes (Planned - Future Phases)
+## 7. Workflow & DAG Orchestration Failure Modes (Active in Phase 08)
+
+| Failure Scenario | Workflow Impact | Detection & Mitigation | Resulting State |
+| :--- | :--- | :--- | :--- |
+| **Cyclic Dependency in Workflow Definition** | Graph contains a directed cycle (e.g. `A -> B -> C -> A` or self-loop `A -> A`), creating deadlock. | `WorkflowDagValidator.validate(version)` runs DFS 3-coloring. Detects back-edge to node in `GRAY` state. Throws `WorkflowValidationException`. | Workflow rejected prior to publishing; cyclic graph is never persisted as executable. |
+| **Orphaned / Missing Dependency Reference** | Workflow edge references a `nodeId` not declared in node definitions. | `WorkflowDagValidator` validates edge node IDs against declared node set. Throws `WorkflowValidationException`. | Workflow rejected at registration boundary. |
+| **Concurrent Fan-In Node Activation Race** | Multiple upstream predecessor nodes complete simultaneously, both attempting to activate the common successor node. | Database-level atomic compare-and-swap: `claimNodeForActivation` executes `UPDATE ... SET status = 'READY' WHERE status = 'PENDING'`. Only winning transaction gets 1 row; losing thread sees 0 rows and skips task creation. | Downstream node is activated and submitted to scheduler **exactly once**. Zero duplicate tasks. |
+| **Terminal Task Failure / DLQ in Workflow Node** | A workflow node task exhausts all retry attempts and enters `DLQ`, or encounters unrecoverable failure. | `WorkflowExecutionService.onTaskCompleted(taskId, false, ...)` marks node `FAILED`. BFS identifies all reachable downstream descendants and marks them `SKIPPED`. Transitions execution to `FAILED`. | Downstream tasks are never scheduled or executed; workflow halts cleanly in `FAILED` state. |
+| **Workflow Cancellation Race with Task Completion** | Operator cancels workflow while an underlying task completes on a worker. | Optimistic concurrency & state check on `WorkflowExecution`: whichever transaction commits first updates state. If workflow is already terminal (`CANCELLED`), task completion is ignored idempotently. If task completes first, cancellation marks remaining nodes. | Consistent final state; no zombie executions or corrupted dependency graphs. |
+| **Mutation Attempt on Published Workflow Version** | Operator attempts to add/remove nodes or alter dependencies on an already published version. | `WorkflowService.createDraftVersion` validates immutability. Published versions reject structural mutations. | Operation rejected with `IllegalStateException`; new version must be drafted. |
+| **Cross-Execution Dependency Pollution** | Two concurrent executions of the same workflow version run simultaneously. | Complete isolation: each execution maintains its own independent rows in `chronos_workflow_execution_nodes`. Dependency queries always filter strictly by `execution_id`. | Zero state leakage between concurrent executions. |
+
+---
+
+## 8. Distributed System Failure Modes (Planned - Future Phases)
 
 The following distributed failure modes represent the planned operational resiliency architecture for future phases:
 
 | Distributed Scenario | Implementation Phase | Planned Mitigation Mechanism |
 | :--- | :--- | :--- |
-| **DAG Cascade Failure & Partial Rollback** | Phase 08 | Upstream step failure cascades to dependent downstream nodes with configurable failure propagation policies. |
-| **Workflow Cyclic Dependency Deadlock** | Phase 08 | Static DAG cycle detection at registration time via topological sorting. |
 | **API Gateway Throttling / DDoS** | Phase 09 | Rate-limiting bucket algorithms per tenant at REST ingress gateway. |
 | **Dynamic Worker Autoscaling Dropouts** | Phase 12 | Graceful node draining during autoscaler scale-down events via SIGTERM signal traps. |
 

@@ -1,8 +1,8 @@
 # Chronos Core - API & Shared Contracts Specification
 
 ## Status
-- **Current Phase**: Phase 07 (Fault Tolerance, Retries & Task Recovery)
-- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, and Fault Tolerance / Recovery Services
+- **Current Phase**: Phase 08 (Workflow & DAG Orchestration)
+- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, Fault Tolerance / Recovery Services, and Workflow & DAG Orchestration Services
 - **REST API Status**: *Deferred to Phase 09 (Planned)*
 
 ---
@@ -245,11 +245,41 @@ Dead-Letter Queue management and replay service:
 
 ---
 
-## 8. Future REST API Endpoints (Phase 09 Blueprint)
+## 8. Workflow Orchestration Contracts (`com.chronoscore.coordinator.workflow`)
+
+Phase 08 introduces the workflow orchestration layer for Directed Acyclic Graph (DAG) task execution:
+
+### 8.1 `WorkflowDagValidator` (`com.chronoscore.common.validation`)
+Deterministic DAG validation and topological sorting:
+- `validate(WorkflowVersion version)`: Validates graph constraints, cycle detection (DFS 3-coloring), orphaned dependencies, duplicate IDs, and graph bounds. Throws `WorkflowValidationException`.
+- `topologicalSort(WorkflowVersion version)`: Produces deterministic execution ordering via Kahn's algorithm with lexicographical tie-breaking.
+- `findRootNodes(WorkflowVersion version)`: Resolves all nodes with in-degree 0.
+
+### 8.2 `WorkflowService` (`com.chronoscore.coordinator.workflow.service`)
+Workflow definition and version lifecycle service:
+- `WorkflowDefinition createWorkflow(String name, String description)`: Registers a new workflow namespace.
+- `WorkflowVersion createDraftVersion(UUID workflowId, List<WorkflowNodeDefinition> nodes, List<WorkflowEdge> edges)`: Creates an editable draft version.
+- `WorkflowVersion publishVersion(UUID versionId)`: Validates DAG and transitions version to `PUBLISHED` (immutable).
+- `WorkflowVersion deprecateVersion(UUID versionId)`: Deprecates version from starting new executions.
+- `Optional<WorkflowVersion> getLatestPublishedVersion(UUID workflowId)`: Retrieves active version.
+
+### 8.3 `WorkflowExecutionService` (`com.chronoscore.coordinator.workflow.service`)
+Workflow execution and dependency propagation service:
+- `WorkflowExecution startExecution(UUID workflowId, UUID versionId, String tenantId)`: Instantiates a workflow execution, binds it to the specified version, and activates root nodes as queued Chronos tasks.
+- `boolean onTaskCompleted(UUID taskId, boolean success, String errorCode, String errorMessage)`: Processes task completions; atomically claims and activates eligible downstream nodes; transitions workflow to `SUCCEEDED` or `FAILED`.
+- `WorkflowExecution cancelExecution(UUID executionId, String reason)`: Cancels in-flight execution, cancels pending nodes, and issues cooperative cancellation to active workers.
+- `Optional<WorkflowExecution> getExecution(UUID executionId)`: Retrieves execution instance state.
+- `List<WorkflowExecutionNode> getExecutionNodes(UUID executionId)`: Retrieves node execution records.
+
+---
+
+## 9. Future REST API Endpoints (Phase 09 Blueprint)
 
 > **Notice**: The REST HTTP gateway endpoints are deferred to Phase 09.
 > Future endpoints will expose task submission (`POST /api/v1/tasks`), retrieval (`GET /api/v1/tasks/{id}`),
-> cancellation (`POST /api/v1/tasks/{id}/cancel`), DLQ replay (`POST /api/v1/tasks/{id}/replay`), and cluster topology visibility (`GET /api/v1/cluster/overview`).
+> cancellation (`POST /api/v1/tasks/{id}/cancel`), DLQ replay (`POST /api/v1/tasks/{id}/replay`),
+> workflow definition (`POST /api/v1/workflows`), workflow execution (`POST /api/v1/workflows/{id}/executions`),
+> and cluster topology visibility (`GET /api/v1/cluster/overview`).
 
 
 

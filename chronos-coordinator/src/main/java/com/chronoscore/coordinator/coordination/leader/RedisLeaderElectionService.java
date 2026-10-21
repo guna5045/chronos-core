@@ -245,6 +245,9 @@ public class RedisLeaderElectionService implements LeaderElectionService, SmartL
     }
 
     private void coordinationTick() {
+        if (!running.get()) {
+            return;
+        }
         try {
             if (isLeader()) {
                 renewLease();
@@ -289,6 +292,11 @@ public class RedisLeaderElectionService implements LeaderElectionService, SmartL
             log.info("Stopping leader election loop for coordinator '{}'", coordinatorId);
             if (scheduler != null) {
                 scheduler.shutdownNow();
+                try {
+                    scheduler.awaitTermination(500, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                }
             }
             if (isLeader()) {
                 releaseLeadership();
