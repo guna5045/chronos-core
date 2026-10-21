@@ -1,48 +1,94 @@
-# Chronos Core - API & Contract Blueprints
+# Chronos Core - API & Shared Contracts Specification
 
 ## Status
-- **Current Phase**: Phase 01 (Foundation)
-- **Specification Status**: Planned Contracts
+- **Current Phase**: Phase 02 (Core Domain Model & Shared Contracts)
+- **Specification Status**: Active Domain Contracts & Protocol Buffer Wire Schemas
+- **REST API Status**: *Deferred to Phase 09 (Planned)*
 
 ---
 
-## 1. Coordinator Public REST Endpoints (Planned - Phase 09)
+## 1. Domain Data Transfer Objects (`com.chronoscore.common.dto`)
 
-### 1.1 Tasks API
-- `POST /api/v1/tasks` - Submit a new task with payload, priority, and retry policy.
-- `GET /api/v1/tasks/{id}` - Retrieve task status, execution timeline, and attempt history.
-- `POST /api/v1/tasks/{id}/cancel` - Request immediate cancellation of an in-flight task.
-- `GET /api/v1/tasks` - Filterable paginated list of tasks by status, tag, or time range.
+Shared DTO records used for safe data transfer across service boundaries without exposing internal entity mechanics:
 
-### 1.2 Workflows (DAGs) API
-- `POST /api/v1/workflows` - Register or update a workflow definition with DAG dependencies.
-- `POST /api/v1/workflows/{id}/trigger` - Trigger execution of a specific workflow instance.
-- `GET /api/v1/workflows/instances/{instanceId}` - Fetch full DAG execution status graph.
+### 1.1 `TaskSubmissionDTO`
+Payload for creating a new task submission:
+- `taskType` (String, required): Identified worker capability to invoke.
+- `payload` (String, required): Structured JSON or textual payload for the task.
+- `priority` (TaskPriority, optional, default: `NORMAL`): Execution urgency.
+- `tenantId` (String, required): Tenant partition identifier.
+- `idempotencyKey` (String, optional): Deduplication key (max 256 chars).
+- `scheduledAt` (Instant, optional): Future execution time.
+- `deadline` (Instant, optional): Absolute deadline.
+- `timeout` (Duration, optional): Maximum attempt execution duration.
+- `maxAttempts` (Integer, optional, default: 3): Max execution retries.
 
-### 1.3 Cluster & Worker Health API
-- `GET /api/v1/cluster/overview` - Coordinator status, active leader, epoch number, and cluster statistics.
-- `GET /api/v1/cluster/workers` - Enumerate active registered workers, heartbeat statuses, and load.
+### 1.2 `TaskSummaryDTO`
+Lightweight representation for cluster listings and status inspection:
+- `taskId` (UUID)
+- `taskType` (String)
+- `priority` (TaskPriority)
+- `status` (TaskStatus)
+- `tenantId` (String)
+- `createdAt` (Instant)
+- `currentAttempt` (int)
+- `maxAttempts` (int)
+- `version` (long)
+
+### 1.3 `TaskStateChangeDTO`
+Event structure emitted upon successful lifecycle state transitions:
+- `taskId` (UUID)
+- `previousStatus` (TaskStatus)
+- `newStatus` (TaskStatus)
+- `currentAttempt` (int)
+- `timestamp` (Instant)
+- `reason` (String)
+
+### 1.4 `ExecutionAttemptSummaryDTO`
+Summary of an individual attempt executed by a worker:
+- `attemptId` (UUID)
+- `taskId` (UUID)
+- `workerId` (String)
+- `attemptNumber` (int)
+- `status` (ExecutionAttemptStatus)
+- `startedAt` (Instant)
+- `completedAt` (Instant, nullable)
+- `errorCode` (String, nullable)
 
 ---
 
-## 2. Internal gRPC Protocol Contracts (Planned - Phase 06)
+## 2. Protocol Buffers Wire Contract (`src/main/proto/chronos_task_execution.proto`)
 
-### 2.1 WorkerService
+Binary serialization schema used for inter-node communication between Coordinators and Workers:
+
+### 2.1 Core Messages
+- `ProtoTask`: Wire representation of a task definition.
+- `ProtoTaskAssignment`: Dispatch payload delivered to an assigned worker node.
+- `ProtoTaskResult`: Result payload reported by a worker upon completion or failure.
+- `ProtoTaskStateUpdate`: Real-time state transition telemetry.
+- `ProtoWorkerIdentity`: Worker capability and connection metadata.
+- `ProtoHeartbeatPing` / `ProtoHeartbeatPong`: Liveness and cluster load telemetry with epoch fencing tokens.
+- `ProtoTaskCancelRequest` / `ProtoTaskCancelResponse`: Explicit cancellation messaging.
+
+### 2.2 Wire Service Signatures (Runtime Implementation Deferred to Phase 06)
 ```protobuf
-syntax = "proto3";
-package com.chronoscore.grpc;
-
 service WorkerService {
-  rpc RegisterWorker (RegisterWorkerRequest) returns (RegisterWorkerResponse);
-  rpc StreamHeartbeat (stream HeartbeatPing) returns (stream HeartbeatPong);
-  rpc DispatchTask (TaskDispatchPayload) returns (TaskDispatchAck);
-  rpc CancelTask (TaskCancelRequest) returns (TaskCancelResponse);
+  rpc RegisterWorker (ProtoWorkerIdentity) returns (ProtoHeartbeatPong);
+  rpc StreamHeartbeat (stream ProtoHeartbeatPing) returns (stream ProtoHeartbeatPong);
+  rpc DispatchTask (ProtoTaskAssignment) returns (ProtoTaskStateUpdate);
+  rpc CancelTask (ProtoTaskCancelRequest) returns (ProtoTaskCancelResponse);
+}
+
+service TaskCoordinationService {
+  rpc UpdateTaskState (ProtoTaskStateUpdate) returns (ProtoHeartbeatPong);
+  rpc ReportTaskResult (ProtoTaskResult) returns (ProtoHeartbeatPong);
 }
 ```
 
 ---
 
-## 3. Serialization & Encoding
-- REST payloads encode in UTF-8 JSON.
-- Internal RPC payloads encode in Google Protocol Buffers v3.
-- Timestamps conform strictly to ISO-8601 (UTC).
+## 3. Future REST API Endpoints (Phase 09 Blueprint)
+
+> **Notice**: The REST HTTP gateway endpoints are deferred to Phase 09.
+> Future endpoints will expose task submission (`POST /api/v1/tasks`), retrieval (`GET /api/v1/tasks/{id}`),
+> cancellation (`POST /api/v1/tasks/{id}/cancel`), and cluster topology visibility (`GET /api/v1/cluster/overview`).

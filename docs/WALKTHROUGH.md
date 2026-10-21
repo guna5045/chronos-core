@@ -1,40 +1,55 @@
 # Chronos Core - System Walkthrough & Operational Lifecycle
 
 ## Status
-- **Current Phase**: Phase 01 (Foundation)
+- **Current Phase**: Phase 02 (Core Domain Model & Shared Contracts)
 
 ---
 
-## 1. Task Lifecycle Overview
+## 1. Task Lifecycle Sequence
 
-A task in Chronos Core follows a strictly verified finite state machine:
+In Chronos Core, every task progresses through a strictly validated finite state machine:
 
-```
-[ SUBMITTED ]
-      │
-      ▼
- [ PENDING ] ─────► [ SCHEDULED ] ─────► [ DISPATCHED ]
-                                                │
-                                                ▼
-                                           [ RUNNING ]
-                                          /     │     \
-                                         /      │      \
-                                        ▼       ▼       ▼
-                             [ COMPLETED ]  [ FAILED ]  [ CANCELLED ]
-                                                │
-                                                ▼ (Retries Remaining?)
-                                         [ RETRYING ] (Backoff + Jitter)
-                                                │
-                                                ▼ (Max Attempts Exceeded)
-                                         [ DEAD_LETTER ]
+```text
+Task Submission (TaskSubmissionDTO)
+    │
+    ▼
+[ CREATED ]
+    │ (validation passed, enqueued)
+    ▼
+ [ QUEUED ]
+    │ (priority scheduler matches available worker)
+    ▼
+[ DISPATCHED ]
+    │ (worker picks up task and begins run)
+    ▼
+ [ RUNNING ]
+    │
+    ├──► [ SUCCEEDED ] ──► (Terminal state; task completed)
+    │
+    ├──► [ CANCELLED ] ──► (Terminal state; operator/timeout abort)
+    │
+    └──► [ FAILED ]
+            │
+            ▼ (evaluate attempts against maxAttempts)
+     ┌──────────────┴──────────────┐
+     │                             │
+(currentAttempt < maxAttempts)     (currentAttempt >= maxAttempts)
+     │                             │
+     ▼                             ▼
+ [ QUEUED ] (Retry backoff)     [ DLQ ] (Dead-Letter Queue; Terminal)
 ```
 
 ---
 
-## 2. DAG Execution Sequence
+## 2. Phase-by-Phase Implementation Note
 
-1. **Submission**: User submits a directed acyclic graph representing job dependencies.
-2. **Cycle Detection**: Coordinator validates the DAG using Kahn's algorithm or DFS topological sort to guarantee acyclicity.
-3. **Root Dispatch**: Nodes with zero in-degrees are immediately dispatched to available workers.
-4. **Cascade Resolution**: When an upstream task completes, its output is recorded, dependent child in-degrees are decremented, and ready tasks are dispatched.
-5. **Workflow Completion**: When all terminal nodes complete, the workflow transitions to `COMPLETED`.
+> **Important**: In Phase 02, only the domain models, validation contracts, state machine transitions, and Protobuf serialization definitions are active.
+>
+> The actual runtime components:
+> - **Durable persistence**: PostgreSQL tables and schema migrations (Phase 03)
+> - **Cluster coordination & locking**: Redis lease-based leader election (Phase 04)
+> - **Execution engine & state transitions in DB**: Task state machine persistence (Phase 05)
+> - **Bidirectional network communication**: gRPC worker heartbeats & dispatching (Phase 06)
+> - **Priority queue scheduling**: Worker capacity matching with aging (Phase 07)
+>
+> will be implemented in their respective subsequent phases.

@@ -17,6 +17,25 @@
     <description>Shared domain contracts, models, and constants for Chronos Core</description>
 
     <dependencies>
+        <!-- Protobuf & gRPC Serialization Contracts -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-protobuf</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.grpc</groupId>
+            <artifactId>grpc-stub</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+            <version>1.3.2</version>
+        </dependency>
+
         <!-- Logging API -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -31,6 +50,11 @@
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
             <scope>test</scope>
         </dependency>
@@ -40,4 +64,115 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- 1. Resolve & extract protoc executable and standard google/protobuf proto definitions -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-protoc-binaries</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.google.protobuf</groupId>
+                                    <artifactId>protoc</artifactId>
+                                    <version>${protobuf.version}</version>
+                                    <classifier>${os.detected.classifier}</classifier>
+                                    <type>exe</type>
+                                    <outputDirectory>${project.build.directory}/protoc-bin</outputDirectory>
+                                    <destFileName>protoc.exe</destFileName>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>io.grpc</groupId>
+                                    <artifactId>protoc-gen-grpc-java</artifactId>
+                                    <version>${grpc.version}</version>
+                                    <classifier>${os.detected.classifier}</classifier>
+                                    <type>exe</type>
+                                    <outputDirectory>${project.build.directory}/protoc-bin</outputDirectory>
+                                    <destFileName>protoc-gen-grpc-java.exe</destFileName>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>unpack-proto-include</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>unpack</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>com.google.protobuf</groupId>
+                                    <artifactId>protobuf-java</artifactId>
+                                    <version>${protobuf.version}</version>
+                                    <type>jar</type>
+                                    <outputDirectory>${project.build.directory}/protoc-include</outputDirectory>
+                                    <includes>google/protobuf/*.proto</includes>
+                                </artifactItem>
+                            </artifactItems>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 2. Execute protoc using relative paths to ensure Unicode/Windows path safety -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>compile-protoc</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/generated-sources/protobuf/java"/>
+                                <mkdir dir="${project.build.directory}/generated-sources/protobuf/grpc-java"/>
+                                <echo file="${project.build.directory}/protoc-args.txt">-Isrc/main/proto${line.separator}-Itarget/protoc-include${line.separator}--java_out=target/generated-sources/protobuf/java${line.separator}--plugin=protoc-gen-grpc-java=target/protoc-bin/protoc-gen-grpc-java.exe${line.separator}--grpc-java_out=target/generated-sources/protobuf/grpc-java${line.separator}src/main/proto/chronos_task_execution.proto${line.separator}</echo>
+                                <chmod file="${project.build.directory}/protoc-bin/protoc.exe" perm="755"/>
+                                <chmod file="${project.build.directory}/protoc-bin/protoc-gen-grpc-java.exe" perm="755"/>
+                                <exec executable="${project.build.directory}/protoc-bin/protoc.exe" failonerror="true">
+                                    <arg value="@target/protoc-args.txt"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 3. Register generated Protobuf and gRPC source directories with compiler -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <id>add-protobuf-source</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.build.directory}/generated-sources/protobuf/java</source>
+                                <source>${project.build.directory}/generated-sources/protobuf/grpc-java</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

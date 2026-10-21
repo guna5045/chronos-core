@@ -1,22 +1,31 @@
 # Chronos Core - Failure Modes & Resiliency Analysis
 
 ## Status
-- **Current Phase**: Phase 01 (Foundation)
+- **Current Phase**: Phase 02 (Core Domain Model & Shared Contracts)
 
 ---
 
-## 1. Overview
-In a distributed orchestration platform, network failures, node crashes, split-brain conditions, and resource exhaustion are normal operating occurrences. Chronos Core is designed around strict deterministic mitigation protocols.
+## 1. Domain-Level Failure Modes (Active in Phase 02)
 
----
-
-## 2. Failure Mode Matrix
-
-| Failure Scenario | Immediate Impact | Mitigation Mechanism | Recovery Behavior |
+| Failure Scenario | Domain Impact | Detection & Mitigation | Resulting State |
 | :--- | :--- | :--- | :--- |
-| **Active Coordinator Crash** | Loss of cluster leader, pause in new task dispatches | Redis lease TTL expires. Standby coordinator detects loss, acquires lease, increments epoch fencing token. | Promoted coordinator reconciles in-flight tasks from PostgreSQL and resumes dispatching. |
-| **Network Partition (Split Brain)** | Old leader isolated, unable to communicate with Redis | Fencing tokens. Even if old leader attempts writes to DB or workers, epoch verification fails. | Old leader steps down upon failing lease renewal; new leader continues. |
-| **Worker Node Crash / Disconnection** | In-flight tasks interrupted or orphaned | Coordinator detects missing heartbeats beyond configured threshold (e.g., 3 missed beats). | Coordinator marks worker as `UNREACHABLE`, reschedules idempotent tasks with incremented attempt counter. |
-| **Task Failure / Unhandled Exception** | Execution failure within user payload | Task state transitions to `FAILED`. Retry policy evaluated (exponential backoff + full jitter). | Task scheduled for next attempt; if `maxRetries` exceeded, moved to `DEAD_LETTER` queue. |
-| **PostgreSQL Database Unavailability** | Inability to commit durable state changes | Coordinator enters read-only backpressure mode; rejects new task submissions with `503 Service Unavailable`. | Reconnects via HikariCP exponential reconnect loop and flushes pending writes once restored. |
-| **Redis Coordination Outage** | Inability to renew leader leases | Coordinators detect loss of coordination store, pause active dispatching to prevent dual leaders. | Automatically rejoins election pool as soon as Redis is reachable. |
+| **Invalid State Transition** | Attempted illegal lifecycle progression (e.g. `SUCCEEDED -> RUNNING`, `RUNNING -> CREATED`). | `TaskStateMachine` validates all transitions deterministically. Throws `InvalidTaskTransitionException`. | Operation rejected; existing state preserved untouched. |
+| **Retry Exhaustion** | Task attempt fails and `currentAttempt >= maxAttempts`. | State machine evaluates `transitionOnFailure(taskId, currentAttempt, maxAttempts)`. Detects attempt threshold reached. | Transitions to `DLQ` (Dead-Letter Queue). |
+| **Task Cancellation** | Operator abort or task deadline exceeded during queueing, dispatch, or execution. | Transition to `CANCELLED` permitted from `CREATED`, `QUEUED`, `DISPATCHED`, and `RUNNING`. | Transitions to `CANCELLED` (terminal state). |
+| **Stale Version / Update Conflict** | Concurrent coordinator or worker attempts update with outdated version counter. | Optimistic concurrency check: `task.getVersion()` must match expected database row version. | Update rejected via version conflict; avoids lost updates. |
+| **Invalid Task Submission** | Submission payload missing required fields (blank type, negative timeout, inconsistent deadline). | `TaskValidator.validate(task)` enforces domain invariants before enqueueing. | Throws `InvalidTaskException`; task rejected at boundary. |
+| **Duplicate Logical Submission** | Client retries submission with identical `idempotencyKey` for the same tenant. | Domain model captures `idempotencyKey`. Future persistence tier enforces unique constraint `(tenantId, idempotencyKey)`. | Deduplicated to existing task; duplicate execution prevented. |
+
+---
+
+## 2. Distributed System Failure Modes (Planned - Future Phases)
+
+The following distributed failure modes represent the planned operational resiliency architecture:
+
+| Distributed Scenario | Implementation Phase | Planned Mitigation Mechanism |
+| :--- | :--- | :--- |
+| **Active Coordinator Crash** | Phase 04 | Redis lease TTL expiration, standby promotion, monotonically incremented epoch fencing tokens. |
+| **Network Partition (Split Brain)** | Phase 04 / 05 | Fencing token validation on all persistent writes. Outdated leader writes rejected. |
+| **Worker Node Crash / Disconnection** | Phase 06 | Missing gRPC heartbeats (threshold 3 beats). Worker marked `UNREACHABLE`; in-flight tasks re-queued. |
+| **Transient Database Outage** | Phase 03 | HikariCP reconnect backpressure; incoming requests rejected with 503 until connection pool restored. |
+| **Redis Coordination Outage** | Phase 04 | Coordinators pause active dispatching to prevent dual leaders during coordination store loss. |

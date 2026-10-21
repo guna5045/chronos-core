@@ -1,0 +1,149 @@
+syntax = "proto3";
+
+package com.chronoscore.proto;
+
+option java_multiple_files = true;
+option java_package = "com.chronoscore.common.proto";
+option java_outer_classname = "ChronosTaskExecutionProtos";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+// Enumeration of task statuses in wire protocol serialization
+enum ProtoTaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_CREATED = 1;
+  TASK_STATUS_QUEUED = 2;
+  TASK_STATUS_DISPATCHED = 3;
+  TASK_STATUS_RUNNING = 4;
+  TASK_STATUS_SUCCEEDED = 5;
+  TASK_STATUS_FAILED = 6;
+  TASK_STATUS_CANCELLED = 7;
+  TASK_STATUS_DLQ = 8;
+}
+
+// Enumeration of task priority levels
+enum ProtoTaskPriority {
+  TASK_PRIORITY_UNSPECIFIED = 0;
+  TASK_PRIORITY_LOW = 1;
+  TASK_PRIORITY_NORMAL = 2;
+  TASK_PRIORITY_HIGH = 3;
+  TASK_PRIORITY_CRITICAL = 4;
+}
+
+// Execution attempt status for an individual physical attempt
+enum ProtoExecutionStatus {
+  EXECUTION_STATUS_UNSPECIFIED = 0;
+  EXECUTION_STATUS_PENDING = 1;
+  EXECUTION_STATUS_RUNNING = 2;
+  EXECUTION_STATUS_SUCCEEDED = 3;
+  EXECUTION_STATUS_FAILED = 4;
+  EXECUTION_STATUS_CANCELLED = 5;
+}
+
+// Canonical Task message representing a task definition on the wire
+message ProtoTask {
+  string task_id = 1;
+  string task_type = 2;
+  string payload = 3;
+  ProtoTaskPriority priority = 4;
+  ProtoTaskStatus status = 5;
+  string tenant_id = 6;
+  string idempotency_key = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp scheduled_at = 9;
+  google.protobuf.Timestamp deadline = 10;
+  google.protobuf.Duration timeout = 11;
+  int32 max_attempts = 12;
+  int32 current_attempt = 13;
+  int64 version = 14;
+}
+
+// Task assignment dispatched by the Coordinator to an assigned Worker
+message ProtoTaskAssignment {
+  string task_id = 1;
+  string worker_id = 2;
+  int32 attempt_number = 3;
+  ProtoTask task = 4;
+  google.protobuf.Timestamp assignment_time = 5;
+}
+
+// Execution result reported back to Coordinator upon attempt completion
+message ProtoTaskResult {
+  string task_id = 1;
+  string worker_id = 2;
+  int32 attempt_number = 3;
+  ProtoExecutionStatus status = 4;
+  google.protobuf.Timestamp completed_at = 5;
+  string error_code = 6;
+  string error_message = 7;
+  string output_payload = 8;
+}
+
+// Task state transition update signal
+message ProtoTaskStateUpdate {
+  string task_id = 1;
+  string worker_id = 2;
+  ProtoTaskStatus previous_status = 3;
+  ProtoTaskStatus new_status = 4;
+  int32 current_attempt = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  string reason = 7;
+}
+
+// Worker registration and capability identity
+message ProtoWorkerIdentity {
+  string worker_id = 1;
+  string hostname = 2;
+  string ip_address = 3;
+  int32 port = 4;
+  int32 max_concurrent_tasks = 5;
+  int32 active_tasks = 6;
+  string version = 7;
+  google.protobuf.Timestamp registered_at = 8;
+}
+
+// Periodic heartbeat ping emitted by Worker
+message ProtoHeartbeatPing {
+  string worker_id = 1;
+  google.protobuf.Timestamp timestamp = 2;
+  int32 active_tasks = 3;
+  double cpu_usage_percent = 4;
+  double memory_usage_percent = 5;
+}
+
+// Periodic heartbeat pong acknowledgment returned by Coordinator
+message ProtoHeartbeatPong {
+  string coordinator_id = 1;
+  int64 epoch_fencing_token = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  bool acknowledged = 4;
+}
+
+// Task cancellation signal
+message ProtoTaskCancelRequest {
+  string task_id = 1;
+  string reason = 2;
+  google.protobuf.Timestamp requested_at = 3;
+}
+
+// Task cancellation response
+message ProtoTaskCancelResponse {
+  string task_id = 1;
+  bool accepted = 2;
+  string message = 3;
+}
+
+// Directional gRPC service definitions for cluster communication
+// (Serialization contracts only; runtime implementation deferred to Phase 06)
+service WorkerService {
+  rpc RegisterWorker (ProtoWorkerIdentity) returns (ProtoHeartbeatPong);
+  rpc StreamHeartbeat (stream ProtoHeartbeatPing) returns (stream ProtoHeartbeatPong);
+  rpc DispatchTask (ProtoTaskAssignment) returns (ProtoTaskStateUpdate);
+  rpc CancelTask (ProtoTaskCancelRequest) returns (ProtoTaskCancelResponse);
+}
+
+service TaskCoordinationService {
+  rpc UpdateTaskState (ProtoTaskStateUpdate) returns (ProtoHeartbeatPong);
+  rpc ReportTaskResult (ProtoTaskResult) returns (ProtoHeartbeatPong);
+}
