@@ -54,6 +54,19 @@ chronos:
     starvation-batch-ratio: ${CHRONOS_SCHEDULER_STARVATION_RATIO:0.2}
   distribution:
     virtual-nodes-per-worker: ${CHRONOS_DISTRIBUTION_VNODES:128}
+  lease:
+    duration: ${CHRONOS_LEASE_DURATION:30s}
+    renewal-interval: ${CHRONOS_LEASE_RENEWAL_INTERVAL:10s}
+  retry:
+    enabled: ${CHRONOS_RETRY_ENABLED:true}
+    base-delay: ${CHRONOS_RETRY_BASE_DELAY:1s}
+    max-delay: ${CHRONOS_RETRY_MAX_DELAY:60s}
+    multiplier: ${CHRONOS_RETRY_MULTIPLIER:2.0}
+    jitter: ${CHRONOS_RETRY_JITTER:true}
+  recovery:
+    enabled: ${CHRONOS_RECOVERY_ENABLED:true}
+    poll-interval: ${CHRONOS_RECOVERY_POLL_INTERVAL:1s}
+    batch-size: ${CHRONOS_RECOVERY_BATCH_SIZE:50}
 
 server:
   port: 8080

@@ -1,5 +1,6 @@
 package com.chronoscore.coordinator.scheduler;
 
+import com.chronoscore.common.domain.ExecutionAttempt;
 import com.chronoscore.common.domain.Task;
 import com.chronoscore.common.enums.TaskStatus;
 import com.chronoscore.common.proto.ProtoTask;
@@ -69,6 +70,7 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
     private final SchedulingPolicy schedulingPolicy;
     private final SchedulerProperties schedulerProperties;
     private final SchedulerMetricsRecorder metricsRecorder;
+    private final com.chronoscore.coordinator.recovery.lease.ExecutionLeaseService leaseService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean loopInProgress = new AtomicBoolean(false);
@@ -84,6 +86,24 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
                                     SchedulingPolicy schedulingPolicy,
                                     SchedulerProperties schedulerProperties,
                                     SchedulerMetricsRecorder metricsRecorder) {
+        this(leaderElectionService, fencingTokenService, distributedLockService, taskRepository,
+                transactionalTaskService, workerSelector, workerDispatchClient, schedulingPolicy,
+                schedulerProperties, metricsRecorder, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LeaderAwareTaskScheduler(LeaderElectionService leaderElectionService,
+                                    FencingTokenService fencingTokenService,
+                                    DistributedLockService distributedLockService,
+                                    TaskRepository taskRepository,
+                                    TransactionalTaskService transactionalTaskService,
+                                    WorkerSelector workerSelector,
+                                    WorkerDispatchClient workerDispatchClient,
+                                    SchedulingPolicy schedulingPolicy,
+                                    SchedulerProperties schedulerProperties,
+                                    SchedulerMetricsRecorder metricsRecorder,
+                                    @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                    com.chronoscore.coordinator.recovery.lease.ExecutionLeaseService leaseService) {
         this.leaderElectionService = Objects.requireNonNull(leaderElectionService, "leaderElectionService must not be null");
         this.fencingTokenService = Objects.requireNonNull(fencingTokenService, "fencingTokenService must not be null");
         this.distributedLockService = Objects.requireNonNull(distributedLockService, "distributedLockService must not be null");
@@ -94,6 +114,7 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
         this.schedulingPolicy = Objects.requireNonNull(schedulingPolicy, "schedulingPolicy must not be null");
         this.schedulerProperties = Objects.requireNonNull(schedulerProperties, "schedulerProperties must not be null");
         this.metricsRecorder = Objects.requireNonNull(metricsRecorder, "metricsRecorder must not be null");
+        this.leaseService = leaseService;
     }
 
     @Override
@@ -343,7 +364,14 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
 
             // 8. Upon worker acceptance, commit transition atomically in PostgreSQL
             if (response != null && response.getNewStatus() == ProtoTaskStatus.TASK_STATUS_RUNNING) {
-                transactionalTaskService.startExecutionAttempt(currentTask.getTaskId(), targetWorker.workerId(), nextAttempt);
+                ExecutionAttempt attempt = transactionalTaskService.startExecutionAttempt(currentTask.getTaskId(), targetWorker.workerId(), nextAttempt);
+                if (leaseService != null) {
+                    try {
+                        leaseService.acquireLease(currentTask.getTaskId(), attempt.getAttemptId(), targetWorker.workerId(), nextAttempt, leaderEpoch);
+                    } catch (Exception e) {
+                        log.warn("Failed to acquire execution lease for task '{}': {}", taskIdStr, e.getMessage());
+                    }
+                }
                 metricsRecorder.recordTaskDispatched(currentTask.getTaskType(), targetWorker.workerId());
                 log.info("Task '{}' successfully dispatched to worker '{}' (attempt #{})",
                         taskIdStr, targetWorker.workerId(), nextAttempt);

@@ -37,9 +37,9 @@ public final class TaskStateMachine {
                 EnumSet.of(TaskStatus.DISPATCHED, TaskStatus.CANCELLED)
         ));
 
-        // DISPATCHED can start RUNNING or be CANCELLED (e.g. worker unreachability before execution)
+        // DISPATCHED can start RUNNING, FAIL (e.g. dispatch rejection/worker crash), or be CANCELLED
         transitions.put(TaskStatus.DISPATCHED, Collections.unmodifiableSet(
-                EnumSet.of(TaskStatus.RUNNING, TaskStatus.CANCELLED)
+                EnumSet.of(TaskStatus.RUNNING, TaskStatus.FAILED, TaskStatus.CANCELLED)
         ));
 
         // RUNNING can succeed, fail, or be CANCELLED in-flight
@@ -52,10 +52,14 @@ public final class TaskStateMachine {
                 EnumSet.of(TaskStatus.QUEUED, TaskStatus.DLQ)
         ));
 
-        // Terminal states: no allowed outgoing transitions
+        // Terminal states: SUCCEEDED and CANCELLED have no outgoing transitions
         transitions.put(TaskStatus.SUCCEEDED, Collections.emptySet());
         transitions.put(TaskStatus.CANCELLED, Collections.emptySet());
-        transitions.put(TaskStatus.DLQ, Collections.emptySet());
+
+        // DLQ can be explicitly replayed by operator/service back to QUEUED
+        transitions.put(TaskStatus.DLQ, Collections.unmodifiableSet(
+                EnumSet.of(TaskStatus.QUEUED)
+        ));
 
         VALID_TRANSITIONS = Collections.unmodifiableMap(transitions);
     }

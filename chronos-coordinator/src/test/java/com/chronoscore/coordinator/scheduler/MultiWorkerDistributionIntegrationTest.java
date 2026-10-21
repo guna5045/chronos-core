@@ -84,6 +84,12 @@ class MultiWorkerDistributionIntegrationTest {
             }
             @Override public List<Task> findSchedulableTasks(Instant asOf, int limit) { return findQueuedTasks(limit); }
             @Override public List<Task> findStarvedTasks(Instant asOf, Duration wait, int limit) { return Collections.emptyList(); }
+            @Override public List<Task> findByStatus(TaskStatus status, int limit) {
+                return taskStore.values().stream()
+                        .filter(t -> t.getStatus() == status)
+                        .limit(limit)
+                        .toList();
+            }
         };
     }
 

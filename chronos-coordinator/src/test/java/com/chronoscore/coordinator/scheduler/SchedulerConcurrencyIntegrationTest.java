@@ -139,13 +139,26 @@ class SchedulerConcurrencyIntegrationTest {
             @Override public List<Task> findQueuedTasks(int limit) { return new ArrayList<>(taskStore.values()); }
             @Override public List<Task> findSchedulableTasks(Instant asOf, int limit) { return findQueuedTasks(limit); }
             @Override public List<Task> findStarvedTasks(Instant asOf, Duration wait, int limit) { return Collections.emptyList(); }
+            @Override public List<Task> findByStatus(TaskStatus status, int limit) {
+                return taskStore.values().stream()
+                        .filter(t -> t.getStatus() == status)
+                        .limit(limit)
+                        .toList();
+            }
         };
 
         // Mutate repository state in transactionalTaskService mock
         when(transactionalTaskService.startExecutionAttempt(eq(taskId), anyString(), eq(1)))
                 .thenAnswer(invocation -> {
                     taskStore.put(taskId, initialTask.toBuilder().status(TaskStatus.RUNNING).currentAttempt(1).build());
-                    return null;
+                    return com.chronoscore.common.domain.ExecutionAttempt.builder()
+                            .attemptId(UUID.randomUUID())
+                            .taskId(taskId)
+                            .workerId("worker-1")
+                            .attemptNumber(1)
+                            .status(com.chronoscore.common.enums.ExecutionAttemptStatus.RUNNING)
+                            .startedAt(Instant.now())
+                            .build();
                 });
 
         SchedulerProperties properties = new SchedulerProperties();

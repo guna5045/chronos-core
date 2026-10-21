@@ -212,6 +212,20 @@ public class JdbcTaskRepository implements TaskRepository {
         return jdbcTemplate.query(sql, params, taskRowMapper);
     }
 
+    @Override
+    public List<Task> findByStatus(TaskStatus status, int limit) {
+        Objects.requireNonNull(status, "status must not be null");
+        int maxLimit = Math.max(1, limit);
+        String sql = "SELECT " + SELECT_COLUMNS + " FROM chronos_tasks " +
+                "WHERE status = :status ORDER BY created_at ASC LIMIT :limit";
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("status", status.name())
+                .addValue("limit", maxLimit);
+        return jdbcTemplate.query(sql, params, taskRowMapper);
+    }
+
+
     private MapSqlParameterSource toParameterSource(Task task) {
         return new MapSqlParameterSource()
                 .addValue("taskId", task.getTaskId())

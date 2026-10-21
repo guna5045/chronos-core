@@ -22,12 +22,14 @@ class TaskStateMachineTest {
             "QUEUED, DISPATCHED",
             "QUEUED, CANCELLED",
             "DISPATCHED, RUNNING",
+            "DISPATCHED, FAILED",
             "DISPATCHED, CANCELLED",
             "RUNNING, SUCCEEDED",
             "RUNNING, FAILED",
             "RUNNING, CANCELLED",
             "FAILED, QUEUED",
-            "FAILED, DLQ"
+            "FAILED, DLQ",
+            "DLQ, QUEUED"
     })
     void testPermittedTransitions(TaskStatus from, TaskStatus to) {
         assertThat(TaskStateMachine.isValidTransition(from, to)).isTrue();
@@ -56,7 +58,13 @@ class TaskStateMachineTest {
             "FAILED, CREATED",
             "FAILED, DISPATCHED",
             "FAILED, RUNNING",
-            "FAILED, SUCCEEDED"
+            "FAILED, SUCCEEDED",
+            "DLQ, CREATED",
+            "DLQ, DISPATCHED",
+            "DLQ, RUNNING",
+            "DLQ, SUCCEEDED",
+            "DLQ, FAILED",
+            "DLQ, CANCELLED"
     })
     void testInvalidTransitions(TaskStatus from, TaskStatus to) {
         assertThat(TaskStateMachine.isValidTransition(from, to)).isFalse();
@@ -93,9 +101,15 @@ class TaskStateMachineTest {
     }
 
     @Test
-    @DisplayName("Terminal state DLQ must reject all outgoing transitions")
-    void testTerminalDlqRejectsAll() {
+    @DisplayName("DLQ permits only QUEUED replay transition and rejects all others")
+    void testDlqRejectsAllExceptQueued() {
+        // DLQ -> QUEUED is valid (replay)
+        assertThat(TaskStateMachine.isValidTransition(TaskStatus.DLQ, TaskStatus.QUEUED)).isTrue();
+        assertThat(TaskStateMachine.transition(UUID.randomUUID(), TaskStatus.DLQ, TaskStatus.QUEUED))
+                .isEqualTo(TaskStatus.QUEUED);
+
         for (TaskStatus target : TaskStatus.values()) {
+            if (target == TaskStatus.QUEUED) continue;
             assertThat(TaskStateMachine.isValidTransition(TaskStatus.DLQ, target)).isFalse();
             assertThatThrownBy(() -> TaskStateMachine.transition(TaskStatus.DLQ, target))
                     .isInstanceOf(InvalidTaskTransitionException.class);

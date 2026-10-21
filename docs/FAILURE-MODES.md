@@ -1,7 +1,7 @@
 # Chronos Core - Failure Modes & Resiliency Analysis
 
 ## Status
-- **Current Phase**: Phase 06 (Distributed Scheduling & Task Distribution)
+- **Current Phase**: Phase 07 (Fault Tolerance, Retries & Task Recovery)
 
 ---
 
@@ -71,15 +71,33 @@
  
 ---
  
-## 6. Distributed System Failure Modes (Planned - Future Phases)
- 
-The following distributed failure modes represent the planned operational resiliency architecture:
- 
+## 6. Fault Tolerance & Task Recovery Failure Modes (Active in Phase 07)
+
+| Failure Scenario | Recovery Impact | Detection & Mitigation | Resulting State |
+| :--- | :--- | :--- | :--- |
+| **Worker Crash / Hard Failure** | In-flight tasks left in `DISPATCHED` or `RUNNING` on an unreachable worker. | Heartbeat timeout (>6s) causes worker transition to `REMOVED`. `WorkerHealthMonitor` immediately calls `TaskRecoveryService.recoverWorkerFailure(workerId)`. Active lease identified and attempt marked `WORKER_UNAVAILABLE`. | Evaluates `RetryPolicy`: transitions to `QUEUED` with exponential backoff delay, or `DLQ` if `maxAttempts` exhausted. |
+| **Task Execution Lease Expiration** | Worker freezes or network partition prevents lease renewal without heartbeat monitor eviction. | `RecoveryScheduler` calls `TaskRecoveryService.reclaimExpiredLeases()` periodically. Scans `chronos_task_leases` where `expires_at <= now()`. | Expired lease detected; attempt marked `WORKER_UNAVAILABLE`; retry policy applied; task requeued with backoff or moved to `DLQ`. |
+| **Network Partition & Stale Completion** | Worker A disconnected/evicted, Attempt 1 reassigned to Worker B (Attempt 2). Worker A completes later and reports success. | Attempt fencing & state validation: `TaskRecoveryService.handleTaskCompletion(...)` checks `attemptId` and `attemptNumber` against `task.getCurrentAttempt()`, and checks terminal task status. Stale result rejected with `STALE_RESULT_REJECTED` audit log. | Attempt 1 rejected; Attempt 2 result preserved; task remains in terminal state committed by legitimate winner. |
+| **Task Execution Timeout** | Task runs longer than configured `task.timeout` duration (e.g. infinite loop, external deadlock). | `TaskTimeoutService.scanForTimeouts()` checks `now - attempt.startedAt > task.timeout`. Dispatches cooperative cancellation RPC (`WorkerDispatchClient.cancelTask`) to interrupt virtual thread. | Attempt marked `EXECUTION_TIMEOUT`; retry policy evaluates backoff; task requeued with backoff or routed to `DLQ`. |
+| **Timeout vs Completion Race** | Coordinator detects timeout at the exact moment the worker completes execution. | Optimistic concurrency & attempt state check: whichever transaction commits first updates the database row. The losing operation detects updated version or terminal state and is cleanly rejected without corruption. | Durable state consistently reflects whichever operation committed first. |
+| **Retry Storm (Cascading Failures)** | Transient downstream outage causes dozens of concurrent tasks to fail simultaneously. | Bounded exponential backoff (`delay = min(maxDelay, baseDelay * 2^(attempt-1))`) with randomized jitter spreads retry scheduling across time, preventing synchronized thundering herd. | Tasks are scheduled with staggered `scheduledAt` timestamps in `QUEUED` state. |
+| **Permanent / Non-Retryable Failure** | Task fails with validation, malformed payload, or fatal business error (`INVALID_TASK`, `VALIDATION_ERROR`). | `RetryPolicy.isRetryable(...)` classifies error code. Permanent errors bypass retries. | Task immediately routed to `DLQ` with failure reason recorded in audit log. |
+| **Max Retry Attempts Exhaustion** | Task fails repeatedly and reaches `currentAttempt >= maxAttempts`. | `RetryPolicy.shouldRetry(...)` evaluates attempt count against threshold. | Task transitions to `DLQ` (Dead-Letter Queue) with full execution history preserved. |
+| **Multi-Coordinator Concurrent Recovery Race** | Multiple coordinators or threads attempt to recover the same orphaned or expired task simultaneously. | PostgreSQL optimistic locking (`WHERE task_id = ? AND version = ?`) ensures only one recovery transaction commits. Losing thread catches `OptimisticLockingException` and aborts safely. | Exactly one attempt update occurs; no duplicate attempts or lost state. |
+| **Dead-Letter Queue Replay Race** | Multiple operators or processes invoke DLQ replay on the same failed task. | `DlqService.replayTask(...)` verifies `task.getStatus() == DLQ` within transactional optimistic lock. | First invocation resets task to `QUEUED`; subsequent invocation fails `IllegalStateException` or optimistic lock check. |
+
+---
+
+## 7. Distributed System Failure Modes (Planned - Future Phases)
+
+The following distributed failure modes represent the planned operational resiliency architecture for future phases:
+
 | Distributed Scenario | Implementation Phase | Planned Mitigation Mechanism |
 | :--- | :--- | :--- |
-| **Orphaned In-Flight Task Recovery** | Phase 07 | Coordinator detects evicted worker had active tasks. State machine marks attempts `TIMED_OUT` and re-queues tasks. |
-| **Exponential Retry & Backoff Engine** | Phase 07 | Retry engine with exponential backoff and randomized jitter for failed attempts. |
-| **Transient Database Outage** | Phase 07 | HikariCP reconnect backpressure; incoming requests rejected with 503 until connection pool restored. |
-| **Worker Resource Starvation** | Phase 07 | Worker reports CPU/memory load in heartbeats; coordinator applies backpressure and throttles dispatches. |
+| **DAG Cascade Failure & Partial Rollback** | Phase 08 | Upstream step failure cascades to dependent downstream nodes with configurable failure propagation policies. |
+| **Workflow Cyclic Dependency Deadlock** | Phase 08 | Static DAG cycle detection at registration time via topological sorting. |
+| **API Gateway Throttling / DDoS** | Phase 09 | Rate-limiting bucket algorithms per tenant at REST ingress gateway. |
+| **Dynamic Worker Autoscaling Dropouts** | Phase 12 | Graceful node draining during autoscaler scale-down events via SIGTERM signal traps. |
+
 
 

@@ -1,7 +1,7 @@
 # Chronos Core - Developer Setup & Contribution Guide
 
 ## Status
-- **Current Phase**: Phase 06 (Distributed Scheduling & Task Distribution)
+- **Current Phase**: Phase 07 (Fault Tolerance, Retries & Task Recovery)
 
 ---
 
@@ -213,19 +213,83 @@ mvn test -Dtest=MultiWorkerDistributionIntegrationTest -pl chronos-coordinator
 
 ---
 
-## 7. Module Responsibilities
+---
+
+## 7. Fault Tolerance, Recovery & Lease Configuration (Phase 07)
+
+### 7.1 Configuration Properties & Environment Variables
+
+The recovery, retry, and execution lease subsystems are configured via application properties:
+
+| Property | Environment Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `chronos.lease.enabled` | `CHRONOS_LEASE_ENABLED` | `true` | Enable/disable execution lease tracking. |
+| `chronos.lease.default-ttl` | `CHRONOS_LEASE_DEFAULT_TTL` | `30s` | Default TTL for an execution lease. |
+| `chronos.lease.renewal-interval` | `CHRONOS_LEASE_RENEWAL_INTERVAL` | `10s` | Interval for renewing active execution leases. |
+| `chronos.lease.safety-margin` | `CHRONOS_LEASE_SAFETY_MARGIN` | `5s` | Safety buffer before considering a lease expired. |
+| `chronos.retry.enabled` | `CHRONOS_RETRY_ENABLED` | `true` | Enable/disable task failure retries. |
+| `chronos.retry.base-delay` | `CHRONOS_RETRY_BASE_DELAY` | `1s` | Base backoff duration (`baseDelay * 2^(attempt-1)`). |
+| `chronos.retry.max-delay` | `CHRONOS_RETRY_MAX_DELAY` | `60s` | Maximum backoff cap. |
+| `chronos.retry.jitter` | `CHRONOS_RETRY_JITTER` | `FULL` | Jitter strategy (`NONE`, `FULL`, `DECORRELATED`). |
+| `chronos.recovery.enabled` | `CHRONOS_RECOVERY_ENABLED` | `true` | Enable/disable background recovery scheduler. |
+| `chronos.recovery.poll-interval` | `CHRONOS_RECOVERY_POLL_INTERVAL` | `1000ms`| Recovery sweep interval on the active leader. |
+| `chronos.recovery.batch-size` | `CHRONOS_RECOVERY_BATCH_SIZE` | `50` | Maximum orphaned/expired tasks recovered per sweep. |
+
+### 7.2 Flyway Schema Migration (V5)
+
+Phase 07 adds schema migration `V5__create_task_leases.sql`:
+- Creates durable execution lease table `chronos_task_leases`:
+  - `task_id` (UUID, primary key)
+  - `attempt_id` (UUID, not null)
+  - `worker_id` (VARCHAR(128), not null)
+  - `fence_token` (BIGINT, not null)
+  - `acquired_at` (TIMESTAMPTZ, not null)
+  - `expires_at` (TIMESTAMPTZ, not null)
+- Adds index `idx_task_leases_expires` on `(expires_at)` for fast expired lease sweeps.
+- Adds index `idx_task_leases_worker` on `(worker_id)` for worker eviction cleanup.
+
+### 7.3 Running Fault Tolerance & Recovery Verification Tests
+
+To run the complete suite of retry policy, backoff calculation, execution lease, recovery, and DLQ tests:
+
+```bash
+# Run Retry Policy tests (exponential progression, max cap, jitter bounds, classification)
+mvn test -Dtest=DefaultRetryPolicyTest -pl chronos-coordinator
+
+# Run Execution Lease Service tests (acquire, renew, release, expired search)
+mvn test -Dtest=ExecutionLeaseServiceTest -pl chronos-coordinator
+
+# Run Task Lease Repository Integration tests (H2/PostgreSQL schema operations)
+mvn test -Dtest=JdbcTaskLeaseRepositoryIntegrationTest -pl chronos-coordinator
+
+# Run Task Recovery Service tests (normal, retry backoff, max attempts DLQ, stale rejection, eviction)
+mvn test -Dtest=TaskRecoveryServiceTest -pl chronos-coordinator
+
+# Run Task Timeout Service tests (execution timeout detection, cooperative cancellation, DLQ)
+mvn test -Dtest=TaskTimeoutServiceTest -pl chronos-coordinator
+
+# Run DLQ Service tests (replay lifecycle, state reset, list, non-DLQ rejection)
+mvn test -Dtest=DlqServiceTest -pl chronos-coordinator
+
+# Run Recovery Concurrency Simulation (multi-threaded recovery conflict resolution)
+mvn test -Dtest=RecoveryConcurrencyIntegrationTest -pl chronos-coordinator
+```
+
+---
+
+## 8. Module Responsibilities
 
 | Module | Primary Responsibility |
 | :--- | :--- |
 | **`chronos-common`** | Core domain models (`Task`, `ExecutionAttempt`), enums (`TaskStatus`, `TaskPriority`), state machine, validation rules, shared DTOs, and Protobuf schemas. **Strictly zero business logic.** |
-| **`chronos-coordinator`** | Active-passive leader lease election, task priority scheduling, DAG execution engine, persistence, cluster management, consistent hash distribution, and in-memory worker registry. |
+| **`chronos-coordinator`** | Active-passive leader lease election, task priority scheduling, DAG execution engine, persistence, cluster management, consistent hash distribution, execution leases, retry/recovery engine, and DLQ replay. |
 | **`chronos-worker`** | Worker execution runtime, Java 21 virtual thread executor, task cancellation enforcement, and gRPC heartbeat reporting. |
 | **`chronos-ai`** | Dedicated, isolated module boundary reserved for the AI Workflow and AI Operations agents. |
 | **`chronos-dashboard`** | React + TypeScript + Vite engineering control plane for cluster visibility and operations. |
 
 ---
 
-## 8. Frontend Build Instructions
+## 9. Frontend Build Instructions
 
 ```bash
 cd chronos-dashboard
@@ -237,6 +301,7 @@ To run the local Vite development server:
 npm run dev
 ```
 Accessible at: `http://localhost:5173`.
+
 
 
 

@@ -70,7 +70,7 @@ chronos-core/
 
 ## 6. Development Status
 
-> **Current Status**: **Phase 06: Distributed Scheduling & Task Distribution** Completed
+> **Current Status**: **Phase 07: Fault Tolerance, Retries & Task Recovery** Completed
 
 - [x] **Phase 01: Project Foundation & Repository Setup**
 - [x] **Phase 02: Core Domain Model & Shared Contracts**
@@ -78,6 +78,7 @@ chronos-core/
 - [x] **Phase 04: Redis Coordination & Lease-Based Leader Election**
 - [x] **Phase 05: Worker Cluster & gRPC Communication**
 - [x] **Phase 06: Distributed Scheduling & Task Distribution**
+- [x] **Phase 07: Fault Tolerance, Retries & Task Recovery**
 
 ---
 
@@ -89,7 +90,7 @@ chronos-core/
 4. **Phase 04: Redis Coordination & Lease-Based Leader Election** *(Completed)*
 5. **Phase 05: Worker Cluster & gRPC Communication** *(Completed)*
 6. **Phase 06: Distributed Scheduling & Task Distribution** *(Completed)*
-7. **Phase 07: Failure Recovery, Retries & Deadlines**
+7. **Phase 07: Fault Tolerance, Retries & Task Recovery** *(Completed)*
 8. **Phase 08: Workflow DAG Execution Engine & Versioning**
 9. **Phase 09: REST API Gateway & Security**
 10. **Phase 10: Engineering Control Plane (React Dashboard)**

@@ -33,13 +33,23 @@ public class WorkerHealthMonitor implements SmartLifecycle {
 
     private final WorkerRegistry workerRegistry;
     private final ClusterProperties clusterProperties;
+    private final com.chronoscore.coordinator.recovery.TaskRecoveryService taskRecoveryService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ScheduledExecutorService scheduler;
 
     public WorkerHealthMonitor(WorkerRegistry workerRegistry, ClusterProperties clusterProperties) {
+        this(workerRegistry, clusterProperties, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public WorkerHealthMonitor(WorkerRegistry workerRegistry,
+                               ClusterProperties clusterProperties,
+                               @org.springframework.beans.factory.annotation.Autowired(required = false)
+                               com.chronoscore.coordinator.recovery.TaskRecoveryService taskRecoveryService) {
         this.workerRegistry = Objects.requireNonNull(workerRegistry, "workerRegistry must not be null");
         this.clusterProperties = Objects.requireNonNull(clusterProperties, "clusterProperties must not be null");
+        this.taskRecoveryService = taskRecoveryService;
     }
 
     /**
@@ -62,6 +72,13 @@ public class WorkerHealthMonitor implements SmartLifecycle {
                 log.error("Worker '{}' exceeded eviction timeout (elapsed: {}ms > eviction: {}ms). Transitioning to REMOVED.",
                         worker.workerId(), elapsed.toMillis(), evictionTimeout.toMillis());
                 workerRegistry.updateState(worker.workerId(), worker.sessionId(), WorkerState.REMOVED);
+                if (taskRecoveryService != null) {
+                    try {
+                        taskRecoveryService.recoverWorkerFailure(worker.workerId());
+                    } catch (Exception ex) {
+                        log.error("Failed to recover tasks for evicted worker '{}': {}", worker.workerId(), ex.getMessage(), ex);
+                    }
+                }
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.chronoscore.coordinator.persistence.repository;
 
 import com.chronoscore.common.domain.Task;
+import com.chronoscore.common.enums.TaskStatus;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -96,4 +97,14 @@ public interface TaskRepository {
      * @return list of starved tasks.
      */
     List<Task> findStarvedTasks(Instant asOf, Duration maxWaitTime, int limit);
+
+    /**
+     * Retrieves tasks in a specific lifecycle status ordered by createdAt ASC.
+     *
+     * @param status lifecycle status to filter by (e.g. DLQ, RUNNING).
+     * @param limit maximum number of tasks to return.
+     * @return list of matching tasks.
+     */
+    List<Task> findByStatus(TaskStatus status, int limit);
 }
+

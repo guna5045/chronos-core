@@ -32,5 +32,16 @@ chronos:
     enabled: false
   distribution:
     virtual-nodes-per-worker: 128
+  recovery:
+    enabled: false
+  lease:
+    duration: 30s
+    renewal-interval: 10s
+  retry:
+    enabled: true
+    base-delay: 1s
+    max-delay: 60s
+    multiplier: 2.0
+    jitter: false
 
 

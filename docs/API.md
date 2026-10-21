@@ -1,8 +1,8 @@
 # Chronos Core - API & Shared Contracts Specification
 
 ## Status
-- **Current Phase**: Phase 06 (Distributed Scheduling & Task Distribution)
-- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, and Scheduling Interfaces
+- **Current Phase**: Phase 07 (Fault Tolerance, Retries & Task Recovery)
+- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, and Fault Tolerance / Recovery Services
 - **REST API Status**: *Deferred to Phase 09 (Planned)*
 
 ---
@@ -205,11 +205,52 @@ Observability SPI hook interface for metrics collection:
 
 ---
 
-## 7. Future REST API Endpoints (Phase 09 Blueprint)
+---
+
+## 7. Fault Tolerance, Recovery & Lease Service Contracts
+
+Introduced in Phase 07 for execution leases, failure recovery, retry policies, and dead-letter handling:
+
+### 7.1 `ExecutionLeaseService` (`com.chronoscore.coordinator.lease`)
+Task execution lease tracking interface:
+- `TaskExecutionLease acquireLease(UUID taskId, UUID attemptId, String workerId, long fenceToken, Duration ttl)`: Atomically stores or updates execution lease with fencing token.
+- `boolean renewLease(UUID taskId, UUID attemptId, Duration extension)`: Extends the lease expiry time if the specified attempt currently holds the lease.
+- `boolean releaseLease(UUID taskId)`: Deletes the task execution lease upon task completion.
+- `Optional<TaskExecutionLease> getLease(UUID taskId)`: Retrieves the active lease for a task.
+- `List<TaskExecutionLease> findExpiredLeases(Instant asOf, int limit)`: Returns active leases whose expiration is before `asOf`.
+- `List<TaskExecutionLease> findLeasesByWorker(String workerId)`: Returns active leases assigned to a specific worker.
+
+### 7.2 `RetryPolicy` (`com.chronoscore.coordinator.recovery`)
+Failure classification and retry decision engine:
+- `boolean shouldRetry(Task task, String errorCode)`: Determines if an attempt failure qualifies for retry based on `currentAttempt < maxAttempts` and `FailureClassification`.
+- `Duration calculateBackoff(int attempt)`: Computes bounded exponential backoff delay with configured jitter strategy (`delay = min(maxDelay, baseDelay * 2^(attempt-1))`).
+- `Instant nextScheduledTime(int attempt)`: Computes wall-clock scheduled time for the next retry attempt.
+- `boolean isRetryable(String errorCode)`: Classifies error code into retryable vs permanent.
+
+### 7.3 `TaskRecoveryService` (`com.chronoscore.coordinator.recovery`)
+Coordinator-side failure recovery and stale result rejection service:
+- `boolean handleTaskCompletion(UUID taskId, UUID attemptId, boolean success, String errorCode, String errorMessage, long fenceToken)`: Evaluates terminal task result; enforces strict attempt fencing and rejects stale worker completions; applies retry policy or DLQ routing on failure.
+- `int recoverWorkerFailure(String workerId)`: Evaluates all active tasks assigned to an evicted worker, marks orphaned attempts failed (`WORKER_UNAVAILABLE`), and requeues with backoff or moves to DLQ.
+- `int reclaimExpiredLeases(int batchSize)`: Scans for tasks with expired leases, reclaims orphaned tasks, and applies retry/DLQ transitions.
+
+### 7.4 `TaskTimeoutService` (`com.chronoscore.coordinator.recovery`)
+Task execution timeout enforcement service:
+- `int scanForTimeouts(int batchSize)`: Identifies running tasks whose execution time exceeds configured `task.timeout`, dispatches cooperative cancellation to the worker, and triggers failure recovery.
+
+### 7.5 `DlqService` (`com.chronoscore.coordinator.recovery`)
+Dead-Letter Queue management and replay service:
+- `Task replayTask(UUID taskId)`: Atomically resets a task in `DLQ` state back to `QUEUED` with zeroed attempt count, clears failure metadata, stages audit/outbox events, and makes it eligible for rescheduling.
+- `List<Task> listDlqTasks(int limit)`: Retrieves tasks currently in `DLQ` state.
+- `Optional<Task> getDlqTask(UUID taskId)`: Retrieves a specific DLQ task if present.
+
+---
+
+## 8. Future REST API Endpoints (Phase 09 Blueprint)
 
 > **Notice**: The REST HTTP gateway endpoints are deferred to Phase 09.
 > Future endpoints will expose task submission (`POST /api/v1/tasks`), retrieval (`GET /api/v1/tasks/{id}`),
-> cancellation (`POST /api/v1/tasks/{id}/cancel`), and cluster topology visibility (`GET /api/v1/cluster/overview`).
+> cancellation (`POST /api/v1/tasks/{id}/cancel`), DLQ replay (`POST /api/v1/tasks/{id}/replay`), and cluster topology visibility (`GET /api/v1/cluster/overview`).
+
 
 
 

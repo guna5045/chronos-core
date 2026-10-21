@@ -43,15 +43,26 @@ public class TaskCoordinationGrpcService extends TaskCoordinationServiceGrpc.Tas
     private final FencingTokenService fencingTokenService;
     private final CoordinationProperties coordinationProperties;
     private final TransactionalTaskService transactionalTaskService;
+    private final com.chronoscore.coordinator.recovery.TaskRecoveryService taskRecoveryService;
 
     public TaskCoordinationGrpcService(WorkerRegistry workerRegistry,
                                        FencingTokenService fencingTokenService,
                                        CoordinationProperties coordinationProperties,
-                                       @Autowired(required = false) TransactionalTaskService transactionalTaskService) {
+                                       TransactionalTaskService transactionalTaskService) {
+        this(workerRegistry, fencingTokenService, coordinationProperties, transactionalTaskService, null);
+    }
+
+    @Autowired
+    public TaskCoordinationGrpcService(WorkerRegistry workerRegistry,
+                                       FencingTokenService fencingTokenService,
+                                       CoordinationProperties coordinationProperties,
+                                       @Autowired(required = false) TransactionalTaskService transactionalTaskService,
+                                       @Autowired(required = false) com.chronoscore.coordinator.recovery.TaskRecoveryService taskRecoveryService) {
         this.workerRegistry = Objects.requireNonNull(workerRegistry, "workerRegistry must not be null");
         this.fencingTokenService = Objects.requireNonNull(fencingTokenService, "fencingTokenService must not be null");
         this.coordinationProperties = Objects.requireNonNull(coordinationProperties, "coordinationProperties must not be null");
         this.transactionalTaskService = transactionalTaskService;
+        this.taskRecoveryService = taskRecoveryService;
     }
 
     @Override
@@ -202,7 +213,9 @@ public class TaskCoordinationGrpcService extends TaskCoordinationServiceGrpc.Tas
         try {
             UUID taskId = UUID.fromString(taskIdStr);
 
-            if (transactionalTaskService != null) {
+            if (taskRecoveryService != null) {
+                taskRecoveryService.handleTaskResult(request);
+            } else if (transactionalTaskService != null) {
                 transactionalTaskService.transitionTask(
                         taskId,
                         success ? TaskStatus.SUCCEEDED : TaskStatus.FAILED,

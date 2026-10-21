@@ -1,8 +1,8 @@
 # Chronos Core - Architectural Specification
 
 ## Status
-- **Current Phase**: Phase 06 (Distributed Scheduling & Task Distribution)
-- **Document Version**: 0.6.0
+- **Current Phase**: Phase 07 (Fault Tolerance, Retries & Task Recovery)
+- **Document Version**: 0.7.0
 
 ---
 
@@ -524,6 +524,101 @@ When an eligible worker is selected:
 ### 8.9 Semantic Guarantee
 
 Chronos Core provides **at-least-once delivery with idempotency, transactional state transitions, distributed locking, and fencing-based stale-operation protection**. It does not claim exactly-once execution.
+
+---
+
+## 9. Fault Tolerance, Retries, Execution Leases & Recovery Architecture
+
+Phase 07 establishes the end-to-end fault tolerance and recovery subsystem ensuring that tasks survive worker node crashes, network partitions, dispatch dropouts, execution timeouts, and retryable failures without duplicate active executions or lost state.
+
+### 9.1 Retry Policy & Failure Classification
+
+Failure handling distinguishes transient infrastructure glitches from terminal validation errors:
+- **`FailureClassification`**:
+  - **Retryable Failures**: `WORKER_UNAVAILABLE`, `WORKER_TIMEOUT`, `TEMPORARY_NETWORK_FAILURE`, `CAPACITY_EXHAUSTED`, `EXECUTION_TIMEOUT`, `TRANSIENT_INFRASTRUCTURE_ERROR`.
+  - **Non-Retryable Failures**: `INVALID_TASK`, `INVALID_PAYLOAD`, `UNSUPPORTED_TASK_TYPE`, `VALIDATION_ERROR`, `PERMISSION_ERROR`.
+- **`RetryPolicy`**:
+  - Re-evaluates each failed attempt against task `maxAttempts` and error classification.
+  - If retryable and `currentAttempt < maxAttempts`: computes next retry delay, updates `scheduledAt = now + delay`, and transitions task back to `QUEUED`.
+  - If non-retryable or `currentAttempt >= maxAttempts`: transitions task directly to `DLQ` (Dead-Letter Queue).
+
+### 9.2 Exponential Backoff with Jitter
+
+To prevent retry storms where dozens of failed tasks all retry simultaneously, retry delays follow a bounded exponential progression:
+```text
+delay = min(maxDelay, baseDelay × 2^(attempt - 1))
+```
+- **Base Delay**: Configurable (default: 1s).
+- **Max Delay**: Configurable upper bound preventing unbounded backoff (default: 60s).
+- **Jitter Strategies**:
+  - `NONE`: Deterministic exponential delay.
+  - `FULL`: Uniform random delay between `0` and calculated exponential delay.
+  - `DECORRELATED`: Random delay between `baseDelay` and `3 × previousDelay`.
+
+### 9.3 Task Execution Leases & Lease Lifecycle
+
+Chronos Core separates **distributed scheduling locks** (which prevent competing coordinators from simultaneously dispatching a queued task) from **task execution leases** (which represent durable ownership of an active execution attempt):
+- **Lease Model (`TaskExecutionLease`)**:
+  - Tracks `taskId`, `attemptId`, `workerId`, `fenceToken` (matching coordinator leader epoch), `acquiredAt`, and `expiresAt`.
+  - Stored in durable table `chronos_task_leases` with unique constraint on `task_id`.
+- **Lease Lifecycle**:
+  - **Acquisition**: `ExecutionLeaseService.acquireLease(...)` acquires an exclusive lease upon successful dispatch.
+  - **Renewal**: Workers or active execution monitors periodically renew the lease (`renewLease(...)`).
+  - **Release**: Upon terminal completion (`SUCCEEDED`, `FAILED`, `DLQ`), `releaseLease(taskId)` removes the lease.
+  - **Expiration**: If a worker abruptly dies, its lease ceases to renew and naturally expires (`expires_at <= :asOf`).
+
+### 9.4 Worker Failure Recovery & Eviction Integration
+
+When `WorkerHealthMonitor` detects that a worker node has stopped sending heartbeats (>6,000ms), it transitions the node to `WorkerState.REMOVED` and immediately notifies `TaskRecoveryService.recoverWorkerFailure(workerId)`:
+1. Identifies all active execution leases owned by the failed worker.
+2. For each task, checks durable database status and optimistic lock version.
+3. If still `DISPATCHED` or `RUNNING`: marks attempt as failed with `WORKER_UNAVAILABLE`.
+4. Evaluates `RetryPolicy`: either schedules retry with exponential backoff (`QUEUED` with future `scheduledAt`) or transitions to `DLQ`.
+5. Cleans up orphaned leases.
+
+### 9.5 Stale Worker Execution Protection & Fencing
+
+To guard against network partitions where a worker experiences a long pause or partition, gets evicted by the coordinator, has its task reassigned to another worker, and later attempts to report an outdated completion:
+- **Attempt Sequence Validation**: The coordinator strictly matches reported `attemptId` and `attemptNumber` against `task.getCurrentAttempt()`.
+- **Fence Token Assertion**: Compares the attempt's fence token against active leader epoch.
+- **Terminal Task Invariance**: If a task is already in `SUCCEEDED` or `DLQ`, or if a newer attempt has started, any stale result from the previous attempt is **strictly rejected**.
+- **Audit Logging**: Every rejected stale report is recorded in `chronos_task_audit_log` with event type `STALE_RESULT_REJECTED`.
+
+### 9.6 Task Timeouts & Cooperative Cancellation
+
+Tasks configured with an execution `timeout` (e.g. 30s) are actively tracked:
+1. `TaskTimeoutService.scanForTimeouts()` detects running tasks where `now - attempt.startedAt > timeout`.
+2. Dispatches a cooperative cancellation gRPC request (`WorkerDispatchClient.cancelTask`) to the assigned worker node, interrupting its virtual execution thread.
+3. Fails the attempt with `EXECUTION_TIMEOUT`.
+4. Applies `RetryPolicy` to determine whether to requeue for a subsequent attempt or route to `DLQ`.
+
+### 9.7 Dead-Letter Queue (DLQ) & DLQ Replay Semantics
+
+Tasks that fail permanently or exhaust their `maxAttempts` are routed to `TaskStatus.DLQ`:
+- **Preserved History**: The full failure history, error code, error message, and all previous execution attempts remain permanently recorded in PostgreSQL.
+- **`DlqService.replayTask(taskId)`**:
+  - Validates that the task is currently in `DLQ`.
+  - Atomically resets `currentAttempt` to 0, clears error metadata and execution timestamps, and transitions state `DLQ -> QUEUED`.
+  - Stages a `TaskReplayed` audit record and outbox event.
+  - The task becomes immediately eligible for standard priority scheduling in Phase 06.
+
+### 9.8 Background Recovery Scheduler & Concurrency Control
+
+- **`RecoveryScheduler`**: Runs periodically on the active coordinator leader node (default poll: 1,000ms, batch size: 50).
+- **Safe Recovery Operations**:
+  - Scans for expired execution leases (`reclaimExpiredLeases`).
+  - Scans for timed-out running attempts (`scanForTimeouts`).
+- **Concurrent Recovery Protection**:
+  - If multiple coordinators or concurrent threads attempt recovery on the same task, PostgreSQL optimistic locking (`WHERE task_id = ? AND version = ?`) ensures exactly one transaction commits the transition.
+  - Competing transactions detect the version increment, abort without corruption, and log an info message (`Concurrent recovery detected; skipping`).
+
+### 9.9 Delivery Guarantee Summary
+
+Chronos Core guarantees:
+> **At-least-once delivery with idempotency, durable state transitions, task execution leases, retry/backoff, fencing-based stale execution protection, worker failure detection, and dead-letter handling.**
+
+Chronos Core does **NOT** provide, nor does it claim, exactly-once execution.
+
 
 
 
