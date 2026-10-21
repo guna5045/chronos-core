@@ -21,5 +21,11 @@ public enum DispatchOutcome {
     NO_WORKER_AVAILABLE,
 
     /** Worker explicitly rejected the task (e.g. capacity exhausted, unavailable). */
-    DISPATCH_REJECTED
+    DISPATCH_REJECTED,
+
+    /** Task admission was denied (rate limit, tenant concurrency, or system backpressure). Remains QUEUED. */
+    ADMISSION_DENIED,
+
+    /** Another task with the same concurrency key is currently executing. Remains QUEUED. */
+    CONCURRENCY_KEY_LOCKED
 }

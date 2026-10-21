@@ -36,7 +36,7 @@ public final class WorkflowNodeStateMachine {
                 EnumSet.of(WorkflowNodeStatus.SUCCEEDED, WorkflowNodeStatus.FAILED, WorkflowNodeStatus.CANCELLED)
         ));
 
-        // Terminal states have no outgoing transitions
+        // Terminal states: SUCCEEDED, FAILED, SKIPPED, and CANCELLED have no outgoing transitions
         transitions.put(WorkflowNodeStatus.SUCCEEDED, Collections.emptySet());
         transitions.put(WorkflowNodeStatus.FAILED, Collections.emptySet());
         transitions.put(WorkflowNodeStatus.SKIPPED, Collections.emptySet());

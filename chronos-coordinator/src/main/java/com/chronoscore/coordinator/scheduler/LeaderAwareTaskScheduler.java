@@ -20,6 +20,12 @@ import com.chronoscore.coordinator.coordination.model.LeadershipStateListener;
 import com.chronoscore.coordinator.distribution.WorkerSelector;
 import com.chronoscore.coordinator.persistence.repository.TaskRepository;
 import com.chronoscore.coordinator.persistence.service.TransactionalTaskService;
+import com.chronoscore.common.domain.AdmissionDecision;
+import com.chronoscore.common.domain.TenantExecutionPolicy;
+import com.chronoscore.coordinator.coordination.RedisKeyFactory;
+import com.chronoscore.coordinator.persistence.repository.TenantPolicyRepository;
+import com.chronoscore.coordinator.policy.TaskAdmissionController;
+import com.chronoscore.coordinator.policy.TenantConcurrencyManager;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +77,9 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
     private final SchedulerProperties schedulerProperties;
     private final SchedulerMetricsRecorder metricsRecorder;
     private final com.chronoscore.coordinator.recovery.lease.ExecutionLeaseService leaseService;
+    private final TaskAdmissionController admissionController;
+    private final TenantConcurrencyManager concurrencyManager;
+    private final TenantPolicyRepository tenantPolicyRepository;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean loopInProgress = new AtomicBoolean(false);
@@ -88,7 +97,23 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
                                     SchedulerMetricsRecorder metricsRecorder) {
         this(leaderElectionService, fencingTokenService, distributedLockService, taskRepository,
                 transactionalTaskService, workerSelector, workerDispatchClient, schedulingPolicy,
-                schedulerProperties, metricsRecorder, null);
+                schedulerProperties, metricsRecorder, null, null, null, null);
+    }
+
+    public LeaderAwareTaskScheduler(LeaderElectionService leaderElectionService,
+                                    FencingTokenService fencingTokenService,
+                                    DistributedLockService distributedLockService,
+                                    TaskRepository taskRepository,
+                                    TransactionalTaskService transactionalTaskService,
+                                    WorkerSelector workerSelector,
+                                    WorkerDispatchClient workerDispatchClient,
+                                    SchedulingPolicy schedulingPolicy,
+                                    SchedulerProperties schedulerProperties,
+                                    SchedulerMetricsRecorder metricsRecorder,
+                                    com.chronoscore.coordinator.recovery.lease.ExecutionLeaseService leaseService) {
+        this(leaderElectionService, fencingTokenService, distributedLockService, taskRepository,
+                transactionalTaskService, workerSelector, workerDispatchClient, schedulingPolicy,
+                schedulerProperties, metricsRecorder, leaseService, null, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -103,7 +128,13 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
                                     SchedulerProperties schedulerProperties,
                                     SchedulerMetricsRecorder metricsRecorder,
                                     @org.springframework.beans.factory.annotation.Autowired(required = false)
-                                    com.chronoscore.coordinator.recovery.lease.ExecutionLeaseService leaseService) {
+                                    com.chronoscore.coordinator.recovery.lease.ExecutionLeaseService leaseService,
+                                    @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                    TaskAdmissionController admissionController,
+                                    @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                    TenantConcurrencyManager concurrencyManager,
+                                    @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                    TenantPolicyRepository tenantPolicyRepository) {
         this.leaderElectionService = Objects.requireNonNull(leaderElectionService, "leaderElectionService must not be null");
         this.fencingTokenService = Objects.requireNonNull(fencingTokenService, "fencingTokenService must not be null");
         this.distributedLockService = Objects.requireNonNull(distributedLockService, "distributedLockService must not be null");
@@ -115,6 +146,9 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
         this.schedulerProperties = Objects.requireNonNull(schedulerProperties, "schedulerProperties must not be null");
         this.metricsRecorder = Objects.requireNonNull(metricsRecorder, "metricsRecorder must not be null");
         this.leaseService = leaseService;
+        this.admissionController = admissionController;
+        this.concurrencyManager = concurrencyManager;
+        this.tenantPolicyRepository = tenantPolicyRepository;
     }
 
     @Override
@@ -254,7 +288,7 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
                 switch (outcome) {
                     case DISPATCHED -> dispatched++;
                     case DEADLINE_EXPIRED -> deadlines++;
-                    case LOCKED_BY_OTHER, SKIPPED_NOT_QUEUED -> skipped++;
+                    case ADMISSION_DENIED, CONCURRENCY_KEY_LOCKED, LOCKED_BY_OTHER, SKIPPED_NOT_QUEUED -> skipped++;
                     case NO_WORKER_AVAILABLE, DISPATCH_REJECTED -> rejected++;
                 }
             } catch (StaleLeaderException e) {
@@ -292,19 +326,51 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
             return DispatchOutcome.LOCKED_BY_OTHER;
         }
 
-        // 2. Acquire distributed coordination lock to guarantee scheduling exclusivity
+        // 2. Admission Control Check
+        if (admissionController != null) {
+            AdmissionDecision admission = admissionController.evaluateScheduling(task);
+            if (!admission.isAdmitted()) {
+                log.debug("Task '{}' admission held (status: {}, reason: {})",
+                        task.getTaskId(), admission.status(), admission.reason());
+                return DispatchOutcome.ADMISSION_DENIED;
+            }
+        }
+
+        // 3. Logical Concurrency Key Mutual Exclusion Check
+        LockHandle concLockHandle = null;
+        if (task.getConcurrencyKey() != null && !task.getConcurrencyKey().isBlank()) {
+            if (taskRepository.countActiveByConcurrencyKey(task.getTenantId(), task.getConcurrencyKey()) > 0) {
+                log.debug("Another task with concurrency key '{}' for tenant '{}' is currently executing; holding task '{}'",
+                        task.getConcurrencyKey(), task.getTenantId(), taskIdStr);
+                return DispatchOutcome.CONCURRENCY_KEY_LOCKED;
+            }
+            String concLockKey = RedisKeyFactory.concurrencyKeyLock(task.getTenantId(), task.getConcurrencyKey());
+            Optional<LockHandle> concLockOpt = distributedLockService.tryAcquire(concLockKey, schedulerProperties.getTaskLockTtl());
+            if (concLockOpt.isEmpty()) {
+                log.debug("Concurrency key '{}' for tenant '{}' locked by another task; holding task '{}'",
+                        task.getConcurrencyKey(), task.getTenantId(), taskIdStr);
+                return DispatchOutcome.CONCURRENCY_KEY_LOCKED;
+            }
+            concLockHandle = concLockOpt.get();
+        }
+
+        // 4. Acquire distributed coordination lock to guarantee scheduling exclusivity
         Optional<LockHandle> lockOpt = distributedLockService.tryAcquire(lockResource, schedulerProperties.getTaskLockTtl());
         if (lockOpt.isEmpty()) {
+            if (concLockHandle != null) {
+                distributedLockService.release(concLockHandle);
+            }
             log.debug("Task '{}' locked by another coordinator or scheduling cycle; skipping", taskIdStr);
             return DispatchOutcome.LOCKED_BY_OTHER;
         }
 
         LockHandle lockHandle = lockOpt.get();
+        boolean concSlotAcquired = false;
         try {
-            // 3. Fencing assertion: verify caller is still leader with active epoch
+            // 5. Fencing assertion: verify caller is still leader with active epoch
             fencingTokenService.assertActiveLeader(leaderEpoch);
 
-            // 4. Verify task state in PostgreSQL: ensure task is still in QUEUED status
+            // 6. Verify task state in PostgreSQL: ensure task is still in QUEUED status
             Optional<Task> currentOpt = taskRepository.findById(task.getTaskId());
             if (currentOpt.isEmpty()) {
                 return DispatchOutcome.SKIPPED_NOT_QUEUED;
@@ -324,7 +390,7 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
                 return DispatchOutcome.DEADLINE_EXPIRED;
             }
 
-            // 5. Select eligible worker via consistent hash ring with capacity gating
+            // 7. Select eligible worker via consistent hash ring with capacity gating
             Optional<WorkerNode> workerOpt = workerSelector.selectWorker(currentTask);
             if (workerOpt.isEmpty()) {
                 metricsRecorder.recordNoEligibleWorker();
@@ -332,10 +398,22 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
                 return DispatchOutcome.NO_WORKER_AVAILABLE;
             }
 
+            // 8. Atomic Tenant Concurrency Registration
+            if (concurrencyManager != null && tenantPolicyRepository != null) {
+                TenantExecutionPolicy policy = tenantPolicyRepository.getEffectivePolicy(currentTask.getTenantId());
+                boolean admitted = concurrencyManager.tryAcquire(currentTask.getTenantId(), currentTask.getTaskId(), policy.getMaxConcurrentTasks());
+                if (!admitted) {
+                    log.debug("Tenant '{}' concurrency quota reached during atomic acquire for task '{}'",
+                            currentTask.getTenantId(), taskIdStr);
+                    return DispatchOutcome.ADMISSION_DENIED;
+                }
+                concSlotAcquired = true;
+            }
+
             WorkerNode targetWorker = workerOpt.get();
             int nextAttempt = currentTask.getCurrentAttempt() + 1;
 
-            // 6. Build Protobuf TaskAssignment payload
+            // 9. Build Protobuf TaskAssignment payload
             ProtoTask protoTask = ProtoTask.newBuilder()
                     .setTaskId(taskIdStr)
                     .setTaskType(currentTask.getTaskType())
@@ -349,7 +427,7 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
                     .setTask(protoTask)
                     .build();
 
-            // 7. Dispatch to worker over gRPC with explicit deadline
+            // 10. Dispatch to worker over gRPC with explicit deadline
             Instant dispatchStart = Instant.now();
             ProtoTaskStateUpdate response;
             try {
@@ -358,11 +436,14 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
                 log.warn("Worker '{}' rejected dispatch for task '{}' (status: {}): {}",
                         targetWorker.workerId(), taskIdStr, e.getStatus().getCode(), e.getMessage());
                 metricsRecorder.recordTaskDispatchRejected(e.getStatus().getCode().name());
+                if (concSlotAcquired && concurrencyManager != null) {
+                    concurrencyManager.release(currentTask.getTenantId(), currentTask.getTaskId());
+                }
                 return DispatchOutcome.DISPATCH_REJECTED;
             }
             metricsRecorder.recordDispatchLatency(Duration.between(dispatchStart, Instant.now()));
 
-            // 8. Upon worker acceptance, commit transition atomically in PostgreSQL
+            // 11. Upon worker acceptance, commit transition atomically in PostgreSQL
             if (response != null && response.getNewStatus() == ProtoTaskStatus.TASK_STATUS_RUNNING) {
                 ExecutionAttempt attempt = transactionalTaskService.startExecutionAttempt(currentTask.getTaskId(), targetWorker.workerId(), nextAttempt);
                 if (leaseService != null) {
@@ -380,11 +461,17 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
 
             log.warn("Worker '{}' did not accept task '{}' (response status: {})",
                     targetWorker.workerId(), taskIdStr, response != null ? response.getNewStatus() : "null");
+            if (concSlotAcquired && concurrencyManager != null) {
+                concurrencyManager.release(currentTask.getTenantId(), currentTask.getTaskId());
+            }
             return DispatchOutcome.DISPATCH_REJECTED;
 
         } finally {
-            // Always safely release the distributed task lock
+            // Always safely release the distributed locks
             distributedLockService.release(lockHandle);
+            if (concLockHandle != null) {
+                distributedLockService.release(concLockHandle);
+            }
         }
     }
 }

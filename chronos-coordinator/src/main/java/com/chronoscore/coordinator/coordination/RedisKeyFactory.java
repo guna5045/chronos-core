@@ -62,4 +62,51 @@ public final class RedisKeyFactory {
         Objects.requireNonNull(resource, "resource must not be null");
         return LOCK_NAMESPACE + ":" + resource;
     }
+
+    /**
+     * Redis key for token-bucket rate limiting state for a tenant.
+     *
+     * @param tenantId tenant identifier.
+     * @return Redis key string.
+     */
+    public static String tenantRateLimitKey(String tenantId) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        return NAMESPACE_PREFIX + ":tenant:" + tenantId + ":ratelimit";
+    }
+
+    /**
+     * Redis key for the Set of active running task UUIDs for a tenant.
+     *
+     * @param tenantId tenant identifier.
+     * @return Redis key string.
+     */
+    public static String tenantRunningKey(String tenantId) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        return NAMESPACE_PREFIX + ":tenant:" + tenantId + ":running";
+    }
+
+    /**
+     * Redis key for a mutual-exclusion concurrency lock on a logical concurrency key.
+     *
+     * @param tenantId       tenant identifier.
+     * @param concurrencyKey logical concurrency group key.
+     * @return Redis lock resource string.
+     */
+    public static String concurrencyKeyLock(String tenantId, String concurrencyKey) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        Objects.requireNonNull(concurrencyKey, "concurrencyKey must not be null");
+        return NAMESPACE_PREFIX + ":tenant:" + tenantId + ":concurrency:" + concurrencyKey;
+    }
+
+    /**
+     * Redis key for active workflow executions counter/set.
+     *
+     * @param workflowId workflow UUID.
+     * @return Redis key string.
+     */
+    public static String workflowRunningKey(UUID workflowId) {
+        Objects.requireNonNull(workflowId, "workflowId must not be null");
+        return NAMESPACE_PREFIX + ":workflow:" + workflowId + ":running";
+    }
 }
+

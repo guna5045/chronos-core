@@ -39,7 +39,7 @@ public class JdbcTaskRepository implements TaskRepository {
 
     private static final String SELECT_COLUMNS =
             "task_id, task_type, payload, priority, status, tenant_id, " +
-            "idempotency_key, created_at, scheduled_at, deadline, timeout_ms, " +
+            "idempotency_key, concurrency_key, created_at, scheduled_at, deadline, timeout_ms, " +
             "max_attempts, current_attempt, version";
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
@@ -55,11 +55,11 @@ public class JdbcTaskRepository implements TaskRepository {
 
         String sql = "INSERT INTO chronos_tasks (" +
                 "task_id, task_type, payload, priority, status, tenant_id, " +
-                "idempotency_key, created_at, scheduled_at, deadline, timeout_ms, " +
+                "idempotency_key, concurrency_key, created_at, scheduled_at, deadline, timeout_ms, " +
                 "max_attempts, current_attempt, version" +
                 ") VALUES (" +
                 ":taskId, :taskType, :payload, :priority, :status, :tenantId, " +
-                ":idempotencyKey, :createdAt, :scheduledAt, :deadline, :timeoutMs, " +
+                ":idempotencyKey, :concurrencyKey, :createdAt, :scheduledAt, :deadline, :timeoutMs, " +
                 ":maxAttempts, :currentAttempt, :version" +
                 ")";
 
@@ -107,6 +107,7 @@ public class JdbcTaskRepository implements TaskRepository {
                 "status = :status, " +
                 "tenant_id = :tenantId, " +
                 "idempotency_key = :idempotencyKey, " +
+                "concurrency_key = :concurrencyKey, " +
                 "scheduled_at = :scheduledAt, " +
                 "deadline = :deadline, " +
                 "timeout_ms = :timeoutMs, " +
@@ -225,6 +226,53 @@ public class JdbcTaskRepository implements TaskRepository {
         return jdbcTemplate.query(sql, params, taskRowMapper);
     }
 
+    @Override
+    public int countByTenantAndStatus(String tenantId, TaskStatus status) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        Objects.requireNonNull(status, "status must not be null");
+        String sql = "SELECT COUNT(*) FROM chronos_tasks WHERE tenant_id = :tenantId AND status = :status";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("status", status.name());
+        Integer count = jdbcTemplate.queryForObject(sql, params, Integer.class);
+        return count != null ? count : 0;
+    }
+
+    @Override
+    public int countRunningByTenant(String tenantId) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        String sql = "SELECT COUNT(*) FROM chronos_tasks WHERE tenant_id = :tenantId AND status IN ('DISPATCHED', 'RUNNING')";
+        MapSqlParameterSource params = new MapSqlParameterSource("tenantId", tenantId);
+        Integer count = jdbcTemplate.queryForObject(sql, params, Integer.class);
+        return count != null ? count : 0;
+    }
+
+    @Override
+    public List<Task> findByTenantAndStatus(String tenantId, TaskStatus status, int limit) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        Objects.requireNonNull(status, "status must not be null");
+        int maxLimit = Math.max(1, limit);
+        String sql = "SELECT " + SELECT_COLUMNS + " FROM chronos_tasks " +
+                "WHERE tenant_id = :tenantId AND status = :status ORDER BY created_at ASC LIMIT :limit";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("status", status.name())
+                .addValue("limit", maxLimit);
+        return jdbcTemplate.query(sql, params, taskRowMapper);
+    }
+
+    @Override
+    public int countActiveByConcurrencyKey(String tenantId, String concurrencyKey) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        Objects.requireNonNull(concurrencyKey, "concurrencyKey must not be null");
+        String sql = "SELECT COUNT(*) FROM chronos_tasks WHERE tenant_id = :tenantId AND concurrency_key = :concurrencyKey AND status IN ('DISPATCHED', 'RUNNING')";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("concurrencyKey", concurrencyKey);
+        Integer count = jdbcTemplate.queryForObject(sql, params, Integer.class);
+        return count != null ? count : 0;
+    }
+
 
     private MapSqlParameterSource toParameterSource(Task task) {
         return new MapSqlParameterSource()
@@ -235,6 +283,7 @@ public class JdbcTaskRepository implements TaskRepository {
                 .addValue("status", task.getStatus().name())
                 .addValue("tenantId", task.getTenantId())
                 .addValue("idempotencyKey", task.getIdempotencyKey())
+                .addValue("concurrencyKey", task.getConcurrencyKey())
                 .addValue("createdAt", Timestamp.from(task.getCreatedAt()))
                 .addValue("scheduledAt", toTimestamp(task.getScheduledAt()))
                 .addValue("deadline", toTimestamp(task.getDeadline()))
@@ -258,6 +307,7 @@ public class JdbcTaskRepository implements TaskRepository {
             TaskStatus status = TaskStatus.valueOf(rs.getString("status"));
             String tenantId = rs.getString("tenant_id");
             String idempotencyKey = rs.getString("idempotency_key");
+            String concurrencyKey = rs.getString("concurrency_key");
             Instant createdAt = getInstant(rs, "created_at");
             Instant scheduledAt = getInstant(rs, "scheduled_at");
             Instant deadline = getInstant(rs, "deadline");
@@ -277,6 +327,7 @@ public class JdbcTaskRepository implements TaskRepository {
                     .status(status)
                     .tenantId(tenantId)
                     .idempotencyKey(idempotencyKey)
+                    .concurrencyKey(concurrencyKey)
                     .createdAt(createdAt)
                     .scheduledAt(scheduledAt)
                     .deadline(deadline)

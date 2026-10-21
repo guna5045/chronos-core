@@ -17,7 +17,8 @@ public record TaskSubmissionDTO(
         Instant scheduledAt,
         Instant deadline,
         Duration timeout,
-        Integer maxAttempts
+        Integer maxAttempts,
+        String concurrencyKey
 ) {
     public TaskSubmissionDTO {
         if (priority == null) {
@@ -26,5 +27,19 @@ public record TaskSubmissionDTO(
         if (maxAttempts == null || maxAttempts <= 0) {
             maxAttempts = 3;
         }
+    }
+
+    public TaskSubmissionDTO(
+            String taskType,
+            String payload,
+            TaskPriority priority,
+            String tenantId,
+            String idempotencyKey,
+            Instant scheduledAt,
+            Instant deadline,
+            Duration timeout,
+            Integer maxAttempts
+    ) {
+        this(taskType, payload, priority, tenantId, idempotencyKey, scheduledAt, deadline, timeout, maxAttempts, null);
     }
 }

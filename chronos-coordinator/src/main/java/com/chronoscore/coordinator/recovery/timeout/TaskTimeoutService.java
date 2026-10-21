@@ -56,6 +56,9 @@ public class TaskTimeoutService {
     @Autowired(required = false)
     private WorkflowExecutionService workflowExecutionService;
 
+    @Autowired(required = false)
+    private com.chronoscore.coordinator.policy.TenantConcurrencyManager concurrencyManager;
+
     public TaskTimeoutService(TaskRepository taskRepository,
                               ExecutionAttemptRepository attemptRepository,
                               TaskAuditRepository auditRepository,
@@ -78,6 +81,10 @@ public class TaskTimeoutService {
 
     public void setWorkflowExecutionService(WorkflowExecutionService workflowExecutionService) {
         this.workflowExecutionService = workflowExecutionService;
+    }
+
+    public void setConcurrencyManager(com.chronoscore.coordinator.policy.TenantConcurrencyManager concurrencyManager) {
+        this.concurrencyManager = concurrencyManager;
     }
 
     /**
@@ -194,8 +201,11 @@ public class TaskTimeoutService {
                 .build();
         Task persistedTask = taskRepository.update(updatedTask);
 
-        // 5. Release lease
+        // 5. Release lease and tenant concurrency slot
         leaseService.releaseLease(taskId);
+        if (concurrencyManager != null) {
+            concurrencyManager.releaseConcurrency(currentTask.getTenantId(), taskId);
+        }
 
         // 6. Audit log
         TaskAuditRecord audit = TaskAuditRecord.builder()

@@ -59,6 +59,9 @@ public class TaskRecoveryService {
     @Autowired(required = false)
     private WorkflowExecutionService workflowExecutionService;
 
+    @Autowired(required = false)
+    private com.chronoscore.coordinator.policy.TenantConcurrencyManager concurrencyManager;
+
     public TaskRecoveryService(TaskRepository taskRepository,
                                ExecutionAttemptRepository attemptRepository,
                                TaskAuditRepository auditRepository,
@@ -81,6 +84,10 @@ public class TaskRecoveryService {
 
     public void setWorkflowExecutionService(WorkflowExecutionService workflowExecutionService) {
         this.workflowExecutionService = workflowExecutionService;
+    }
+
+    public void setConcurrencyManager(com.chronoscore.coordinator.policy.TenantConcurrencyManager concurrencyManager) {
+        this.concurrencyManager = concurrencyManager;
     }
 
     /**
@@ -155,6 +162,9 @@ public class TaskRecoveryService {
             Task persistedTask = taskRepository.update(updatedTask);
 
             leaseService.releaseLease(taskId);
+            if (concurrencyManager != null) {
+                concurrencyManager.releaseConcurrency(currentTask.getTenantId(), taskId);
+            }
 
             TaskAuditRecord audit = TaskAuditRecord.builder()
                     .taskId(taskId)
@@ -222,6 +232,9 @@ public class TaskRecoveryService {
             Task persistedTask = taskRepository.update(updatedTask);
 
             leaseService.releaseLease(taskId);
+            if (concurrencyManager != null) {
+                concurrencyManager.releaseConcurrency(currentTask.getTenantId(), taskId);
+            }
 
             TaskAuditRecord audit = TaskAuditRecord.builder()
                     .taskId(taskId)
@@ -420,8 +433,11 @@ public class TaskRecoveryService {
                 .build();
         Task persistedTask = taskRepository.update(updatedTask);
 
-        // Clean up execution lease
+        // Clean up execution lease and tenant concurrency
         leaseService.releaseLease(taskId);
+        if (concurrencyManager != null) {
+            concurrencyManager.releaseConcurrency(task.getTenantId(), taskId);
+        }
 
         // Audit log
         TaskAuditRecord audit = TaskAuditRecord.builder()

@@ -28,6 +28,7 @@ public final class Task {
     private final TaskStatus status;
     private final String tenantId;
     private final String idempotencyKey;
+    private final String concurrencyKey;
     private final Instant createdAt;
     private final Instant scheduledAt;
     private final Instant deadline;
@@ -44,6 +45,7 @@ public final class Task {
         this.status = builder.status != null ? builder.status : TaskStatus.CREATED;
         this.tenantId = Objects.requireNonNull(builder.tenantId, "tenantId must not be null");
         this.idempotencyKey = builder.idempotencyKey;
+        this.concurrencyKey = builder.concurrencyKey;
         this.createdAt = builder.createdAt != null ? builder.createdAt : Instant.now();
         this.scheduledAt = builder.scheduledAt;
         this.deadline = builder.deadline;
@@ -83,6 +85,10 @@ public final class Task {
 
     public String getIdempotencyKey() {
         return idempotencyKey;
+    }
+
+    public String getConcurrencyKey() {
+        return concurrencyKey;
     }
 
     public Instant getCreatedAt() {
@@ -152,6 +158,7 @@ public final class Task {
                 .status(this.status)
                 .tenantId(this.tenantId)
                 .idempotencyKey(this.idempotencyKey)
+                .concurrencyKey(this.concurrencyKey)
                 .createdAt(this.createdAt)
                 .scheduledAt(this.scheduledAt)
                 .deadline(this.deadline)
@@ -196,6 +203,7 @@ public final class Task {
         private TaskStatus status = TaskStatus.CREATED;
         private String tenantId;
         private String idempotencyKey;
+        private String concurrencyKey;
         private Instant createdAt;
         private Instant scheduledAt;
         private Instant deadline;
@@ -239,6 +247,11 @@ public final class Task {
 
         public Builder idempotencyKey(String idempotencyKey) {
             this.idempotencyKey = idempotencyKey;
+            return this;
+        }
+
+        public Builder concurrencyKey(String concurrencyKey) {
+            this.concurrencyKey = concurrencyKey;
             return this;
         }
 

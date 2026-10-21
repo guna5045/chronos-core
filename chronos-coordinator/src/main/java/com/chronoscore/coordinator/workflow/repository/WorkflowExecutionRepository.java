@@ -67,4 +67,29 @@ public interface WorkflowExecutionRepository {
      * @param taskId      Chronos task UUID.
      */
     void linkTaskToNode(UUID executionId, String nodeId, UUID taskId);
+
+    /**
+     * Returns count of active (RUNNING) workflow executions for a given tenant.
+     *
+     * @param tenantId tenant identifier.
+     * @return count of currently running workflow executions.
+     */
+    int countActiveExecutionsByTenant(String tenantId);
+
+    /**
+     * Returns count of active (RUNNING) workflow executions for a specific workflow definition.
+     *
+     * @param workflowId workflow definition UUID.
+     * @return count of currently running executions.
+     */
+    int countActiveExecutionsByWorkflow(UUID workflowId);
+
+    /**
+     * Retrieves pending workflow executions waiting for capacity for a given tenant.
+     *
+     * @param tenantId tenant identifier.
+     * @param limit    maximum batch size.
+     * @return list of pending workflow executions ordered by createdAt ASC.
+     */
+    List<WorkflowExecution> findPendingExecutionsByTenant(String tenantId, int limit);
 }

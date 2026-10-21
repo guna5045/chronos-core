@@ -316,6 +316,36 @@ public class JdbcWorkflowExecutionRepository implements WorkflowExecutionReposit
         jdbcTemplate.update(sql, params);
     }
 
+    @Override
+    public int countActiveExecutionsByTenant(String tenantId) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        String sql = "SELECT COUNT(*) FROM chronos_workflow_executions WHERE tenant_id = :tenantId AND status = 'RUNNING'";
+        MapSqlParameterSource params = new MapSqlParameterSource("tenantId", tenantId);
+        Integer count = jdbcTemplate.queryForObject(sql, params, Integer.class);
+        return count != null ? count : 0;
+    }
+
+    @Override
+    public int countActiveExecutionsByWorkflow(UUID workflowId) {
+        Objects.requireNonNull(workflowId, "workflowId must not be null");
+        String sql = "SELECT COUNT(*) FROM chronos_workflow_executions WHERE workflow_id = :workflowId AND status = 'RUNNING'";
+        MapSqlParameterSource params = new MapSqlParameterSource("workflowId", workflowId);
+        Integer count = jdbcTemplate.queryForObject(sql, params, Integer.class);
+        return count != null ? count : 0;
+    }
+
+    @Override
+    public List<WorkflowExecution> findPendingExecutionsByTenant(String tenantId, int limit) {
+        Objects.requireNonNull(tenantId, "tenantId must not be null");
+        int maxLimit = Math.max(1, limit);
+        String sql = "SELECT execution_id, workflow_id, version_id, status, tenant_id, created_at, started_at, completed_at, version " +
+                "FROM chronos_workflow_executions WHERE tenant_id = :tenantId AND status = 'PENDING' ORDER BY created_at ASC LIMIT :limit";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("tenantId", tenantId)
+                .addValue("limit", maxLimit);
+        return jdbcTemplate.query(sql, params, executionRowMapper);
+    }
+
     private static class WorkflowExecutionRowMapper implements RowMapper<WorkflowExecution> {
         @Override
         public WorkflowExecution mapRow(ResultSet rs, int rowNum) throws SQLException {

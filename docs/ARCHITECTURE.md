@@ -665,6 +665,48 @@ Workflow State Update & Downstream Activation
 6. **Deterministic Failure Propagation**: Terminal task failure (`DLQ` or unrecoverable error) marks all downstream descendant nodes as `SKIPPED` and transitions the workflow execution to `FAILED`.
 7. **Cooperative Cancellation**: Workflow cancellation marks non-terminal nodes `CANCELLED` and issues cooperative gRPC cancellation to active worker nodes via `WorkerDispatchClient`.
 
+---
 
+## 11. Advanced Platform Capabilities (`chronos-coordinator::policy`)
 
+Phase 09 establishes multi-tenant isolation, admission controls, fairness, quotas, rate limiting, and execution policies across the existing task and workflow pipelines.
 
+```text
+                  TASK SUBMISSION
+                         │
+                         ▼
+                ┌─────────────────┐
+                │ Admission       │
+                │ Control         │
+                └────────┬────────┘
+                         │
+          ┌──────────────┼───────────────┐
+          ▼              ▼               ▼
+     Tenant Limits   Rate Limit     System Backpressure
+          │              │               │
+          └──────────────┼───────────────┘
+                         ▼
+                   PostgreSQL
+                         │
+                         ▼
+                    Scheduler
+                         │
+                ┌────────┴────────┐
+                ▼                 ▼
+          Fairness Policy    Priority/Aging
+                │                 │
+                └────────┬────────┘
+                         ▼
+                  Worker Selection
+                         │
+                         ▼
+                       Worker
+```
+
+### 11.1 Key Architectural Components
+1. **`TaskAdmissionController`**: Evaluates submission boundary (`evaluateSubmission` for tenant queue limits) and scheduling boundary (`evaluateScheduling` for tenant concurrency, rate limits, concurrency keys, and worker saturation) returning explicit `AdmissionDecision` instances.
+2. **`TenantRateLimiter`**: Token bucket rate limiting (`tasksPerSecond`, `burstCapacity`) backed by atomic Redis Lua scripts (`chronos:tenant:{tenantId}:rate`) with automatic TTL expiration and fail-open resilience during transient Redis outages.
+3. **`TenantConcurrencyManager`**: Atomic Redis Set Lua check-and-add (`chronos:tenant:{tenantId}:running`), fail-closed PostgreSQL fallback, leak-free release on all completion/timeout/cancellation paths, and durable failover reconciliation (`reconcileWithDurableState`).
+4. **`SchedulingPolicy` & Tenant Fairness**: Interleaved round-robin candidate selection across per-tenant queues balanced with priority-aging anti-starvation mechanisms.
+5. **Logical Concurrency Keys (`concurrencyKey`)**: Per-task logical serialization keys with distributed lease-aware locks.
+6. **Hardened DLQ Management**: Inspection (`inspectTask`), durable archival marker (`archiveTask`), and safe replay (`replayTask`) that re-activates downstream workflow nodes without creating duplicate executions.

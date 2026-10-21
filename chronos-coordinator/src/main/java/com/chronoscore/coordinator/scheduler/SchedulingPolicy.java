@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,7 +39,8 @@ public class SchedulingPolicy {
     }
 
     /**
-     * Selects candidate tasks ready for admission and dispatch as of the specified timestamp.
+     * Selects candidate tasks ready for admission and dispatch as of the specified timestamp,
+     * applying anti-starvation aging guarantees combined with tenant-aware round-robin fair queueing.
      *
      * @param asOf current baseline timestamp.
      * @return ordered list of candidate tasks up to the configured batch size.
@@ -53,20 +55,63 @@ public class SchedulingPolicy {
 
         // 1. Fetch starved tasks that have been queued longer than the aging threshold
         List<Task> starvedTasks = taskRepository.findStarvedTasks(effectiveAsOf, agingThreshold, maxStarved);
+        List<Task> fairStarved = fairInterleave(starvedTasks, maxStarved);
 
-        // 2. Fetch standard priority-ordered schedulable tasks
-        int remainingQuota = Math.max(1, batchSize - starvedTasks.size());
-        List<Task> priorityTasks = taskRepository.findSchedulableTasks(effectiveAsOf, remainingQuota);
+        // 2. Fetch candidate schedulable tasks using candidate pool window
+        int remainingQuota = Math.max(0, batchSize - fairStarved.size());
+        int candidatePoolSize = remainingQuota * schedulerProperties.getCandidatePoolMultiplier();
+        List<Task> priorityCandidates = candidatePoolSize > 0
+                ? taskRepository.findSchedulableTasks(effectiveAsOf, candidatePoolSize)
+                : Collections.emptyList();
+        List<Task> fairPriority = fairInterleave(priorityCandidates, remainingQuota);
 
-        // 3. Merge: starved tasks are placed ahead to guarantee forward progress, followed by priority tasks
+        // 3. Merge: starved tasks are placed ahead to guarantee forward progress, followed by tenant-fair priority tasks
         Map<UUID, Task> merged = new LinkedHashMap<>(batchSize);
-        for (Task task : starvedTasks) {
+        for (Task task : fairStarved) {
             merged.put(task.getTaskId(), task);
         }
-        for (Task task : priorityTasks) {
+        for (Task task : fairPriority) {
+            if (merged.size() >= batchSize) {
+                break;
+            }
             merged.putIfAbsent(task.getTaskId(), task);
         }
 
         return new ArrayList<>(merged.values());
+    }
+
+    /**
+     * Interleaves tasks across distinct tenants in round-robin fashion while preserving
+     * priority order within each individual tenant's allocation.
+     *
+     * @param tasks    input task list.
+     * @param maxCount maximum output elements.
+     * @return interleaved task list.
+     */
+    public List<Task> fairInterleave(List<Task> tasks, int maxCount) {
+        if (tasks == null || tasks.isEmpty() || maxCount <= 0) {
+            return new ArrayList<>();
+        }
+
+        Map<String, java.util.Queue<Task>> perTenant = new LinkedHashMap<>();
+        for (Task task : tasks) {
+            perTenant.computeIfAbsent(task.getTenantId(), k -> new java.util.ArrayDeque<>()).add(task);
+        }
+
+        List<Task> interleaved = new ArrayList<>(Math.min(tasks.size(), maxCount));
+        boolean anyAdded = true;
+        while (interleaved.size() < maxCount && anyAdded) {
+            anyAdded = false;
+            for (java.util.Queue<Task> queue : perTenant.values()) {
+                if (!queue.isEmpty()) {
+                    interleaved.add(queue.poll());
+                    anyAdded = true;
+                    if (interleaved.size() >= maxCount) {
+                        break;
+                    }
+                }
+            }
+        }
+        return interleaved;
     }
 }

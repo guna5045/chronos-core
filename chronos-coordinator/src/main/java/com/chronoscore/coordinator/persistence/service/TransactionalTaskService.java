@@ -12,9 +12,18 @@ import com.chronoscore.coordinator.persistence.model.TaskAuditRecord;
 import com.chronoscore.coordinator.persistence.repository.ExecutionAttemptRepository;
 import com.chronoscore.coordinator.persistence.repository.OutboxRepository;
 import com.chronoscore.coordinator.persistence.repository.TaskAuditRepository;
+import com.chronoscore.common.domain.AdmissionDecision;
+import com.chronoscore.common.enums.AdmissionStatus;
+import com.chronoscore.common.exceptions.InvalidTaskTransitionException;
+import com.chronoscore.common.exceptions.TenantQueueLimitExceededException;
+import com.chronoscore.common.exceptions.TenantRateLimitExceededException;
+import com.chronoscore.coordinator.persistence.exception.DuplicateTaskException;
 import com.chronoscore.coordinator.persistence.repository.TaskRepository;
+import com.chronoscore.coordinator.policy.TaskAdmissionController;
+import com.chronoscore.coordinator.policy.TenantConcurrencyManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +56,12 @@ public class TransactionalTaskService {
     private final TaskAuditRepository auditRepository;
     private final OutboxRepository outboxRepository;
 
+    @Autowired(required = false)
+    private TaskAdmissionController admissionController;
+
+    @Autowired(required = false)
+    private TenantConcurrencyManager concurrencyManager;
+
     public TransactionalTaskService(TaskRepository taskRepository,
                                     ExecutionAttemptRepository attemptRepository,
                                     TaskAuditRepository auditRepository,
@@ -55,6 +70,14 @@ public class TransactionalTaskService {
         this.attemptRepository = Objects.requireNonNull(attemptRepository, "attemptRepository must not be null");
         this.auditRepository = Objects.requireNonNull(auditRepository, "auditRepository must not be null");
         this.outboxRepository = Objects.requireNonNull(outboxRepository, "outboxRepository must not be null");
+    }
+
+    public void setAdmissionController(TaskAdmissionController admissionController) {
+        this.admissionController = admissionController;
+    }
+
+    public void setConcurrencyManager(TenantConcurrencyManager concurrencyManager) {
+        this.concurrencyManager = concurrencyManager;
     }
 
     /**
@@ -71,7 +94,44 @@ public class TransactionalTaskService {
         Objects.requireNonNull(task, "task must not be null");
         log.debug("Submitting task {} for tenant {}", task.getTaskId(), task.getTenantId());
 
-        Task savedTask = taskRepository.save(task);
+        // Admission control evaluation at submission boundary
+        if (admissionController != null) {
+            AdmissionDecision decision = admissionController.evaluateSubmission(task);
+            if (!decision.isAdmitted()) {
+                if (decision.status() == AdmissionStatus.TENANT_QUEUE_LIMIT) {
+                    throw new TenantQueueLimitExceededException(task.getTenantId(), decision.reason());
+                }
+                if (decision.status() == AdmissionStatus.RATE_LIMITED) {
+                    throw new TenantRateLimitExceededException(task.getTenantId(), decision.reason());
+                }
+                throw new IllegalStateException("Task admission rejected: " + decision.reason());
+            }
+        }
+
+        // Idempotency resolution before insert
+        if (task.getIdempotencyKey() != null && !task.getIdempotencyKey().isBlank()) {
+            Optional<Task> existingOpt = taskRepository.findByIdempotencyKey(task.getTenantId(), task.getIdempotencyKey());
+            if (existingOpt.isPresent()) {
+                log.info("Idempotent task submission detected for tenant '{}', key '{}': returning existing task '{}'",
+                        task.getTenantId(), task.getIdempotencyKey(), existingOpt.get().getTaskId());
+                return existingOpt.get();
+            }
+        }
+
+        Task savedTask;
+        try {
+            savedTask = taskRepository.save(task);
+        } catch (DuplicateTaskException ex) {
+            if (task.getIdempotencyKey() != null) {
+                Optional<Task> existingOpt = taskRepository.findByIdempotencyKey(task.getTenantId(), task.getIdempotencyKey());
+                if (existingOpt.isPresent()) {
+                    log.info("Concurrent idempotent submission detected for tenant '{}', key '{}': returning existing task '{}'",
+                            task.getTenantId(), task.getIdempotencyKey(), existingOpt.get().getTaskId());
+                    return existingOpt.get();
+                }
+            }
+            throw ex;
+        }
 
         // Append initial audit record
         TaskAuditRecord auditRecord = TaskAuditRecord.builder()
@@ -174,6 +234,11 @@ public class TransactionalTaskService {
         Task currentTask = taskRepository.findById(taskId)
                 .orElseThrow(() -> new TaskNotFoundException(taskId));
 
+        // If task is already cancelled, worker cannot start running!
+        if (currentTask.getStatus() == TaskStatus.CANCELLED) {
+            throw new InvalidTaskTransitionException(taskId, TaskStatus.CANCELLED, TaskStatus.RUNNING);
+        }
+
         // Validate state transition to RUNNING. If currently QUEUED, transition through DISPATCHED first
         TaskStatus targetStatus = TaskStatus.RUNNING;
         if (currentTask.getStatus() == TaskStatus.QUEUED) {
@@ -251,6 +316,23 @@ public class TransactionalTaskService {
         TaskStatus nextTaskStatus;
         String reason;
 
+        // If task was already cancelled while this attempt was running, do NOT resurrect task
+        if (currentTask.getStatus() == TaskStatus.CANCELLED) {
+            if (concurrencyManager != null) {
+                concurrencyManager.releaseConcurrency(currentTask.getTenantId(), taskId);
+            }
+            log.warn("Task {} was CANCELLED while attempt #{} was in flight; ignoring completion to prevent resurrecting task",
+                    taskId, currentAttempt.getAttemptNumber());
+            updatedAttempt = success ? currentAttempt.withSuccess(completedAt) : currentAttempt.withFailure(errorCode, errorMessage, completedAt);
+            attemptRepository.update(updatedAttempt);
+            return updatedAttempt;
+        }
+
+        // Release tenant concurrency slot upon attempt completion
+        if (concurrencyManager != null) {
+            concurrencyManager.releaseConcurrency(currentTask.getTenantId(), taskId);
+        }
+
         if (success) {
             updatedAttempt = currentAttempt.withSuccess(completedAt);
             nextTaskStatus = TaskStatus.SUCCEEDED;
@@ -300,5 +382,73 @@ public class TransactionalTaskService {
         outboxRepository.append(outboxEvent);
 
         return updatedAttempt;
+    }
+
+    /**
+     * Atomically cancels a task across all valid non-terminal lifecycle stages
+     * (CREATED, QUEUED, DISPATCHED, RUNNING, FAILED/retry-waiting, DLQ).
+     * Releases any active tenant concurrency accounting.
+     *
+     * @param taskId task UUID to cancel.
+     * @param reason cancellation rationale.
+     * @return updated cancelled task.
+     */
+    @Transactional
+    public Task cancelTask(UUID taskId, String reason) {
+        Objects.requireNonNull(taskId, "taskId must not be null");
+
+        Task currentTask = taskRepository.findById(taskId)
+                .orElseThrow(() -> new TaskNotFoundException(taskId));
+
+        TaskStatus fromStatus = currentTask.getStatus();
+
+        // Idempotent cancellation: if already cancelled, return existing
+        if (fromStatus == TaskStatus.CANCELLED) {
+            log.debug("Task {} is already CANCELLED; ignoring redundant cancellation", taskId);
+            return currentTask;
+        }
+
+        // If in terminal success, cannot cancel
+        if (fromStatus == TaskStatus.SUCCEEDED) {
+            throw new InvalidTaskTransitionException(taskId, fromStatus, TaskStatus.CANCELLED);
+        }
+
+        // Validate and apply transition to CANCELLED
+        TaskStateMachine.transition(taskId, fromStatus, TaskStatus.CANCELLED);
+
+        Task updatedTaskState = currentTask.toBuilder()
+                .status(TaskStatus.CANCELLED)
+                .build();
+        Task persistedTask = taskRepository.update(updatedTaskState);
+
+        // Release tenant concurrency slot if task was in an active executing state
+        if (concurrencyManager != null) {
+            concurrencyManager.releaseConcurrency(persistedTask.getTenantId(), taskId);
+        }
+
+        // Audit log
+        TaskAuditRecord auditRecord = TaskAuditRecord.builder()
+                .taskId(taskId)
+                .fromStatus(fromStatus)
+                .toStatus(TaskStatus.CANCELLED)
+                .attemptNumber(persistedTask.getCurrentAttempt())
+                .reason(reason != null ? reason : "Task cancelled by operator or system")
+                .createdAt(Instant.now())
+                .build();
+        auditRepository.append(auditRecord);
+
+        // Outbox event
+        OutboxEvent outboxEvent = OutboxEvent.builder()
+                .aggregateType("TASK")
+                .aggregateId(taskId.toString())
+                .eventType("TaskCancelled")
+                .payload(String.format("{\"taskId\":\"%s\",\"fromStatus\":\"%s\",\"toStatus\":\"CANCELLED\",\"version\":%d}",
+                        taskId, fromStatus, persistedTask.getVersion()))
+                .createdAt(Instant.now())
+                .build();
+        outboxRepository.append(outboxEvent);
+
+        log.info("Cancelled task {} from status {} (version {})", taskId, fromStatus, persistedTask.getVersion());
+        return persistedTask;
     }
 }

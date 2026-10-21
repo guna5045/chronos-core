@@ -27,6 +27,8 @@ import com.chronoscore.coordinator.recovery.lease.TaskExecutionLease;
 import com.chronoscore.coordinator.workflow.repository.WorkflowAuditRepository;
 import com.chronoscore.coordinator.workflow.repository.WorkflowExecutionRepository;
 import com.chronoscore.coordinator.workflow.repository.WorkflowRepository;
+import com.chronoscore.common.domain.TenantExecutionPolicy;
+import com.chronoscore.coordinator.persistence.repository.TenantPolicyRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,6 +65,19 @@ public class WorkflowExecutionService {
     private final ExecutionLeaseService leaseService;
     private final WorkerRegistry workerRegistry;
     private final WorkerDispatchClient dispatchClient;
+    private final TenantPolicyRepository tenantPolicyRepository;
+
+    public WorkflowExecutionService(WorkflowRepository workflowRepository,
+                                    WorkflowExecutionRepository executionRepository,
+                                    WorkflowAuditRepository auditRepository,
+                                    OutboxRepository outboxRepository,
+                                    TransactionalTaskService transactionalTaskService,
+                                    ExecutionLeaseService leaseService,
+                                    WorkerRegistry workerRegistry,
+                                    WorkerDispatchClient dispatchClient) {
+        this(workflowRepository, executionRepository, auditRepository, outboxRepository,
+                transactionalTaskService, leaseService, workerRegistry, dispatchClient, null);
+    }
 
     @Autowired
     public WorkflowExecutionService(WorkflowRepository workflowRepository,
@@ -72,7 +87,8 @@ public class WorkflowExecutionService {
                                     TransactionalTaskService transactionalTaskService,
                                     @Autowired(required = false) ExecutionLeaseService leaseService,
                                     @Autowired(required = false) WorkerRegistry workerRegistry,
-                                    @Autowired(required = false) WorkerDispatchClient dispatchClient) {
+                                    @Autowired(required = false) WorkerDispatchClient dispatchClient,
+                                    @Autowired(required = false) TenantPolicyRepository tenantPolicyRepository) {
         this.workflowRepository = Objects.requireNonNull(workflowRepository, "workflowRepository must not be null");
         this.executionRepository = Objects.requireNonNull(executionRepository, "executionRepository must not be null");
         this.auditRepository = Objects.requireNonNull(auditRepository, "auditRepository must not be null");
@@ -81,6 +97,7 @@ public class WorkflowExecutionService {
         this.leaseService = leaseService;
         this.workerRegistry = workerRegistry;
         this.dispatchClient = dispatchClient;
+        this.tenantPolicyRepository = tenantPolicyRepository;
     }
 
     /**
@@ -116,14 +133,27 @@ public class WorkflowExecutionService {
         UUID executionId = UUID.randomUUID();
         Instant now = Instant.now();
 
+        // Check tenant workflow concurrency quota
+        boolean capacityAvailable = true;
+        if (tenantPolicyRepository != null) {
+            TenantExecutionPolicy policy = tenantPolicyRepository.getEffectivePolicy(tenantId);
+            int activeExecutions = executionRepository.countActiveExecutionsByTenant(tenantId);
+            if (activeExecutions >= policy.getMaxWorkflowExecutions()) {
+                capacityAvailable = false;
+                log.info("Tenant '{}' workflow concurrency quota reached ({}/{}); execution [{}] initialized in PENDING state",
+                        tenantId, activeExecutions, policy.getMaxWorkflowExecutions(), executionId);
+            }
+        }
+
+        WorkflowStatus initialStatus = capacityAvailable ? WorkflowStatus.RUNNING : WorkflowStatus.PENDING;
         WorkflowExecution execution = WorkflowExecution.builder()
                 .executionId(executionId)
                 .workflowId(workflowId)
                 .versionId(version.getVersionId())
-                .status(WorkflowStatus.RUNNING)
+                .status(initialStatus)
                 .tenantId(tenantId)
                 .createdAt(now)
-                .startedAt(now)
+                .startedAt(capacityAvailable ? now : null)
                 .version(0L)
                 .build();
 
@@ -144,25 +174,28 @@ public class WorkflowExecutionService {
         }
         executionRepository.saveExecutionNodes(executionNodes);
 
-        // Identify root nodes and activate them
-        List<String> rootNodeIds = WorkflowDagValidator.getRootNodeIds(version.getNodes(), version.getEdges());
-        log.info("Starting workflow execution [{}] (workflow: {}, version: v{}, root nodes: {})",
-                executionId, workflowId, version.getVersion(), rootNodeIds);
+        if (capacityAvailable) {
+            // Identify root nodes and activate them
+            List<String> rootNodeIds = WorkflowDagValidator.getRootNodeIds(version.getNodes(), version.getEdges());
+            log.info("Starting workflow execution [{}] (workflow: {}, version: v{}, root nodes: {})",
+                    executionId, workflowId, version.getVersion(), rootNodeIds);
 
-        for (String rootId : rootNodeIds) {
-            WorkflowNodeDefinition nodeDef = nodeDefMap.get(rootId);
-            activateNode(executionId, version, nodeDef, tenantId);
+            for (String rootId : rootNodeIds) {
+                WorkflowNodeDefinition nodeDef = nodeDefMap.get(rootId);
+                activateNode(executionId, version, nodeDef, tenantId);
+            }
         }
 
-        auditRepository.appendAudit(executionId, null, WorkflowStatus.RUNNING.name(),
-                "Workflow execution started", "version=" + version.getVersion());
+        auditRepository.appendAudit(executionId, null, initialStatus.name(),
+                capacityAvailable ? "Workflow execution started" : "Workflow execution queued (pending concurrency capacity)",
+                "version=" + version.getVersion());
 
         OutboxEvent outbox = OutboxEvent.builder()
                 .aggregateType("WORKFLOW")
                 .aggregateId(executionId.toString())
-                .eventType("WorkflowExecutionStarted")
-                .payload(String.format("{\"executionId\":\"%s\",\"workflowId\":\"%s\",\"version\":%d,\"tenantId\":\"%s\"}",
-                        executionId, workflowId, version.getVersion(), tenantId))
+                .eventType(capacityAvailable ? "WorkflowExecutionStarted" : "WorkflowExecutionPending")
+                .payload(String.format("{\"executionId\":\"%s\",\"workflowId\":\"%s\",\"version\":%d,\"tenantId\":\"%s\",\"status\":\"%s\"}",
+                        executionId, workflowId, version.getVersion(), tenantId, initialStatus))
                 .createdAt(now)
                 .build();
         outboxRepository.append(outbox);
@@ -274,6 +307,7 @@ public class WorkflowExecutionService {
                 outboxRepository.append(outbox);
 
                 log.info("Workflow execution [{}] concluded with SUCCEEDED status", executionId);
+                triggerPendingExecutions(execution.getTenantId());
             }
 
             return true;
@@ -329,6 +363,8 @@ public class WorkflowExecutionService {
                     .createdAt(now)
                     .build();
             outboxRepository.append(outbox);
+
+            triggerPendingExecutions(execution.getTenantId());
 
             return true;
         }
@@ -425,7 +461,111 @@ public class WorkflowExecutionService {
         outboxRepository.append(outbox);
 
         log.info("Workflow execution [{}] cancelled: {}", executionId, reason);
+        triggerPendingExecutions(execution.getTenantId());
         return cancelledExec;
+    }
+
+    /**
+     * Re-activates a workflow node whose associated Chronos task was replayed from DLQ.
+     * If the parent workflow execution was in FAILED state, restores it to RUNNING.
+     *
+     * @param taskId the replayed Chronos task UUID.
+     * @return true if an associated workflow node was found and re-activated, false otherwise.
+     */
+    @Transactional
+    public boolean onTaskReplayed(UUID taskId) {
+        Objects.requireNonNull(taskId, "taskId must not be null");
+
+        Optional<WorkflowExecutionNode> nodeOpt = executionRepository.findExecutionNodeByTaskId(taskId);
+        if (nodeOpt.isEmpty()) {
+            return false;
+        }
+
+        WorkflowExecutionNode node = nodeOpt.get();
+        UUID executionId = node.getExecutionId();
+        Optional<WorkflowExecution> execOpt = executionRepository.findExecutionById(executionId);
+        if (execOpt.isEmpty()) {
+            return false;
+        }
+
+        WorkflowExecution execution = execOpt.get();
+        Instant now = Instant.now();
+
+        // 1. Reactivate node from FAILED to READY
+        if (node.getStatus() == WorkflowNodeStatus.FAILED) {
+            WorkflowExecutionNode reactivatedNode = node.toBuilder()
+                    .status(WorkflowNodeStatus.READY)
+                    .errorCode(null)
+                    .errorMessage(null)
+                    .build();
+            executionRepository.updateExecutionNode(reactivatedNode);
+            log.info("Reactivated workflow node [{}] in execution [{}] following task [{}] DLQ replay",
+                    node.getNodeId(), executionId, taskId);
+        }
+
+        // 2. If workflow was FAILED, restore it to RUNNING
+        if (execution.getStatus() == WorkflowStatus.FAILED) {
+            WorkflowExecution resumedExec = execution.toBuilder()
+                    .status(WorkflowStatus.RUNNING)
+                    .completedAt(null)
+                    .build();
+            executionRepository.updateExecution(resumedExec);
+
+            auditRepository.appendAudit(executionId, WorkflowStatus.FAILED.name(), WorkflowStatus.RUNNING.name(),
+                    "Workflow resumed following DLQ task replay: " + taskId, null);
+
+            log.info("Workflow execution [{}] restored from FAILED to RUNNING following DLQ replay of task [{}]",
+                    executionId, taskId);
+        }
+
+        return true;
+    }
+
+    private void triggerPendingExecutions(String tenantId) {
+        if (tenantPolicyRepository == null || tenantId == null) {
+            return;
+        }
+        try {
+            TenantExecutionPolicy policy = tenantPolicyRepository.getEffectivePolicy(tenantId);
+            int active = executionRepository.countActiveExecutionsByTenant(tenantId);
+            if (active < policy.getMaxWorkflowExecutions()) {
+                int capacity = policy.getMaxWorkflowExecutions() - active;
+                List<WorkflowExecution> pendingList = executionRepository.findPendingExecutionsByTenant(tenantId, capacity);
+                for (WorkflowExecution pending : pendingList) {
+                    resumePendingExecution(pending);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to trigger pending workflow executions for tenant '{}': {}", tenantId, e.getMessage());
+        }
+    }
+
+    private void resumePendingExecution(WorkflowExecution pending) {
+        Instant now = Instant.now();
+        UUID executionId = pending.getExecutionId();
+        WorkflowStateMachine.transition(executionId, WorkflowStatus.PENDING, WorkflowStatus.RUNNING);
+
+        WorkflowExecution runningExec = pending.toBuilder()
+                .status(WorkflowStatus.RUNNING)
+                .startedAt(now)
+                .build();
+        executionRepository.updateExecution(runningExec);
+
+        Optional<WorkflowVersion> versionOpt = workflowRepository.findVersionById(pending.getVersionId());
+        if (versionOpt.isPresent()) {
+            WorkflowVersion version = versionOpt.get();
+            Map<String, WorkflowNodeDefinition> nodeDefMap = version.getNodes().stream()
+                    .collect(Collectors.toMap(WorkflowNodeDefinition::getNodeId, n -> n));
+            List<String> rootNodeIds = WorkflowDagValidator.getRootNodeIds(version.getNodes(), version.getEdges());
+            for (String rootId : rootNodeIds) {
+                WorkflowNodeDefinition nodeDef = nodeDefMap.get(rootId);
+                activateNode(executionId, version, nodeDef, pending.getTenantId());
+            }
+        }
+
+        auditRepository.appendAudit(executionId, WorkflowStatus.PENDING.name(), WorkflowStatus.RUNNING.name(),
+                "Pending workflow execution resumed with available capacity", null);
+        log.info("Pending workflow execution [{}] resumed into RUNNING state", executionId);
     }
 
     public Optional<WorkflowExecution> getExecution(UUID executionId) {

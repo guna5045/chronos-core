@@ -290,6 +290,24 @@ mvn test -Dtest=WorkflowExecutionServiceTest -pl chronos-coordinator
 
 # Run Workflow Concurrency Integration Tests (atomic fan-in activation, duplicate idempotency)
 mvn test -Dtest=WorkflowConcurrencyIntegrationTest -pl chronos-coordinator
+
+# Run Phase 09 Tenant Fairness Tests (interleaved round-robin, priority-aging interaction)
+mvn test -Dtest=TenantFairnessSchedulingTest -pl chronos-coordinator
+
+# Run Phase 09 Token Bucket Rate Limiting Tests (burst capacity, refill, fail-open)
+mvn test -Dtest=TenantRateLimitingTest -pl chronos-coordinator
+
+# Run Phase 09 Tenant Concurrency Tests (atomic Lua accounting, queue limits, backpressure)
+mvn test -Dtest=TenantConcurrencyAndAdmissionTest -pl chronos-coordinator
+
+# Run Phase 09 Task Cancellation Hardening Tests (lifecycle stages, worker races)
+mvn test -Dtest=TaskCancellationHardeningTest -pl chronos-coordinator
+
+# Run Phase 09 DLQ Management Hardening Tests (inspect, archive, safe replay, workflow unblocking)
+mvn test -Dtest=DlqManagementHardeningTest -pl chronos-coordinator
+
+# Run Phase 09 Idempotency Hardening Tests (concurrent submissions, duplicate detection)
+mvn test -Dtest=IdempotencyHardeningTest -pl chronos-coordinator
 ```
 
 ---

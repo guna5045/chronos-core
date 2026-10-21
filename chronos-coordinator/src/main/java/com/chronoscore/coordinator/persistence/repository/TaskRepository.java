@@ -106,5 +106,50 @@ public interface TaskRepository {
      * @return list of matching tasks.
      */
     List<Task> findByStatus(TaskStatus status, int limit);
+
+    /**
+     * Counts tasks for a given tenant in a specific lifecycle status.
+     *
+     * @param tenantId tenant identifier.
+     * @param status   lifecycle status.
+     * @return count of matching tasks.
+     */
+    default int countByTenantAndStatus(String tenantId, TaskStatus status) {
+        return 0;
+    }
+
+    /**
+     * Counts active running tasks (status DISPATCHED or RUNNING) for a given tenant.
+     * Used for tenant concurrency quota checks and database reconciliation.
+     *
+     * @param tenantId tenant identifier.
+     * @return count of active tasks currently executing.
+     */
+    default int countRunningByTenant(String tenantId) {
+        return 0;
+    }
+
+    /**
+     * Retrieves tasks for a given tenant in a specific status.
+     *
+     * @param tenantId tenant identifier.
+     * @param status   lifecycle status.
+     * @param limit    maximum number of tasks.
+     * @return list of matching tasks.
+     */
+    default List<Task> findByTenantAndStatus(String tenantId, TaskStatus status, int limit) {
+        return java.util.Collections.emptyList();
+    }
+
+    /**
+     * Counts active tasks (DISPATCHED or RUNNING) for a given tenant with a specific logical concurrency key.
+     *
+     * @param tenantId       tenant identifier.
+     * @param concurrencyKey logical concurrency group key.
+     * @return count of currently executing tasks with this concurrency key.
+     */
+    default int countActiveByConcurrencyKey(String tenantId, String concurrencyKey) {
+        return 0;
+    }
 }
 

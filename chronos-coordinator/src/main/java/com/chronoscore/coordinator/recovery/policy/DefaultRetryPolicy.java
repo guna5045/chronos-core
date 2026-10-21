@@ -74,6 +74,17 @@ public class DefaultRetryPolicy implements RetryPolicy {
             return false;
         }
 
+        // Enforce that retry execution does not exceed task deadline
+        if (task.getDeadline() != null) {
+            Instant now = Instant.now();
+            Instant nextEstimatedSchedule = calculateNextScheduleTime(currentAttempt, now);
+            if (now.isAfter(task.getDeadline()) || nextEstimatedSchedule.isAfter(task.getDeadline())) {
+                log.info("Task '{}' exceeded or retry schedule ({}) would exceed configured deadline ({}); transitioning to DLQ",
+                        task.getTaskId(), nextEstimatedSchedule, task.getDeadline());
+                return false;
+            }
+        }
+
         return true;
     }
 

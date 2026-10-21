@@ -47,7 +47,7 @@ public final class TaskStateMachine {
                 EnumSet.of(TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED)
         ));
 
-        // FAILED transitions: re-queued for retry or sent to DLQ upon retry exhaustion
+        // FAILED transitions: re-queued for retry or sent to DLQ
         transitions.put(TaskStatus.FAILED, Collections.unmodifiableSet(
                 EnumSet.of(TaskStatus.QUEUED, TaskStatus.DLQ)
         ));
@@ -56,7 +56,7 @@ public final class TaskStateMachine {
         transitions.put(TaskStatus.SUCCEEDED, Collections.emptySet());
         transitions.put(TaskStatus.CANCELLED, Collections.emptySet());
 
-        // DLQ can be explicitly replayed by operator/service back to QUEUED
+        // DLQ can be explicitly replayed back to QUEUED
         transitions.put(TaskStatus.DLQ, Collections.unmodifiableSet(
                 EnumSet.of(TaskStatus.QUEUED)
         ));

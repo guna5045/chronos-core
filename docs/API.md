@@ -273,14 +273,39 @@ Workflow execution and dependency propagation service:
 
 ---
 
-## 9. Future REST API Endpoints (Phase 09 Blueprint)
+## 9. Advanced Platform Capabilities Internal APIs (Phase 09)
 
-> **Notice**: The REST HTTP gateway endpoints are deferred to Phase 09.
+Phase 09 introduces internal service layer contracts for admission control, quotas, rate limiting, and DLQ management:
+
+### 9.1 `TaskAdmissionController` (`com.chronoscore.coordinator.policy`)
+- `AdmissionDecision evaluateSubmission(TaskSubmissionDTO submission)`: Evaluates tenant queue limits and policy parameters at ingestion boundary.
+- `AdmissionDecision evaluateScheduling(Task task, WorkerPoolSnapshot snapshot)`: Evaluates tenant concurrency, token bucket rate limits, concurrency keys, and worker saturation before dispatch.
+
+### 9.2 `TenantRateLimiter` (`com.chronoscore.coordinator.policy`)
+- `boolean tryAcquire(String tenantId, TenantExecutionPolicy policy)`: Atomically evaluates token bucket capacity for tenant; consumes 1 token if available.
+- `boolean isRateLimited(String tenantId, TenantExecutionPolicy policy)`: Non-destructive check of rate-limited state.
+- `void reset(String tenantId)`: Clears tenant token bucket state.
+
+### 9.3 `TenantConcurrencyManager` (`com.chronoscore.coordinator.policy`)
+- `boolean tryAcquireConcurrency(String tenantId, UUID taskId, int maxConcurrent)`: Atomically reserves a running execution slot in Redis Set.
+- `void releaseConcurrency(String tenantId, UUID taskId)`: Idempotently releases execution slot on completion, failure, timeout, or cancellation.
+- `int getRunningCount(String tenantId)`: Returns current running task count for tenant.
+- `void reconcileWithDurableState(String tenantId)`: Resets Redis tracking set to PostgreSQL durable active rows (`DISPATCHED`, `RUNNING`) to prevent counter leaks.
+
+### 9.4 `DlqService` Hardening (`com.chronoscore.coordinator.recovery.dlq`)
+- `Optional<DlqTaskInspection> inspectTask(UUID taskId)`: Inspects DLQ task along with historical execution attempts and audit trail.
+- `Task archiveTask(UUID taskId, String reason)`: Durably archives task in DLQ with audit trail and outbox event without physical deletion.
+- `Task replayTask(UUID taskId, String reason)`: Safely re-queues DLQ task and triggers workflow DAG reactivation if associated with a workflow.
+
+### 9.5 `TransactionalTaskService.cancelTask` (`com.chronoscore.coordinator.persistence.service`)
+- `Task cancelTask(UUID taskId, String reason)`: Atomically cancels task across all valid lifecycle stages (`CREATED`, `QUEUED`, `DISPATCHED`, `RUNNING`) and releases tenant concurrency accounting.
+
+---
+
+## 10. Future REST API Endpoints (Phase 10 Blueprint)
+
+> **Notice**: The REST HTTP gateway endpoints are deferred to Phase 10.
 > Future endpoints will expose task submission (`POST /api/v1/tasks`), retrieval (`GET /api/v1/tasks/{id}`),
-> cancellation (`POST /api/v1/tasks/{id}/cancel`), DLQ replay (`POST /api/v1/tasks/{id}/replay`),
+> cancellation (`POST /api/v1/tasks/{id}/cancel`), DLQ management (`GET /api/v1/dlq/tasks`, `POST /api/v1/dlq/tasks/{id}/replay`, `POST /api/v1/dlq/tasks/{id}/archive`),
 > workflow definition (`POST /api/v1/workflows`), workflow execution (`POST /api/v1/workflows/{id}/executions`),
-> and cluster topology visibility (`GET /api/v1/cluster/overview`).
-
-
-
-
+> tenant policies (`GET/PUT /api/v1/tenants/{tenantId}/policy`), and cluster topology visibility (`GET /api/v1/cluster/overview`).

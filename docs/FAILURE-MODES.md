@@ -102,14 +102,21 @@
 
 ---
 
-## 8. Distributed System Failure Modes (Planned - Future Phases)
+## 8. Advanced Platform Capabilities Failure Modes (Active in Phase 09)
 
-The following distributed failure modes represent the planned operational resiliency architecture for future phases:
+| Failure Scenario | Platform Impact | Detection & Mitigation | Resulting State |
+| :--- | :--- | :--- | :--- |
+| **Tenant Rate Limit Burst Exhaustion** | Tenant exceeds `tasksPerSecond` and `burstCapacity` budget. | `TaskAdmissionController.evaluateScheduling` evaluates `TenantRateLimiter.tryAcquire()`. Returns `RATE_LIMITED`. | Task remains `QUEUED` without incrementing attempts or failing. Automatically evaluated as token bucket refills. |
+| **Tenant Concurrency Saturation** | Tenant reaches `maxConcurrentTasks` in flight across cluster. | `TaskAdmissionController` evaluates `TenantConcurrencyManager.tryAcquireConcurrency()`. Returns `TENANT_CONCURRENCY_LIMIT`. | Task remains `QUEUED`. Admitted once currently running tasks complete or fail. |
+| **Tenant Queue Exhaustion at Ingestion** | Tenant exceeds `maxQueuedTasks` limit in PostgreSQL. | `TaskAdmissionController.evaluateSubmission` detects active queued count $\ge$ limit. Returns `TENANT_QUEUE_LIMIT`. | Submission rejected immediately with `TenantQueueLimitExceededException`. Database is protected against unbounded backlog bloat. |
+| **System-Wide Worker Saturation** | All worker execution slots across the cluster are occupied or 0 workers registered. | `SystemBackpressureMonitor.isUnderBackpressure()` returns `true`. `TaskAdmissionController` returns `SYSTEM_BACKPRESSURE`. | Scheduler skips worker assignment; tasks remain `QUEUED`. Zero tasks dropped or failed. |
+| **Redis Outage during Rate Limiting** | Redis connection times out or crashes during rate limit checks. | `RedisTenantRateLimiter` logs warning and **fails open** (`return true`). | Tasks are dispatched; worker capacity backpressure prevents cluster crash. |
+| **Redis Outage during Concurrency Enforcement** | Redis connection times out or crashes during concurrency reservation. | `TenantConcurrencyManager` **fails closed** to PostgreSQL query (`countRunningByTenant`). | Concurrency quotas remain strictly enforced without risking cluster over-allocation. |
+| **Coordinator Crash with Active Tenant Executions** | Coordinator crashes, leaving running tasks in Redis tracking set. | Newly elected coordinator leader runs `TenantConcurrencyManager.reconcileWithDurableState(tenantId)`, synchronizing Redis sets with durable PostgreSQL active rows (`DISPATCHED`, `RUNNING`). | Stale counter entries evicted; tenant execution budget restored to accurate reality. |
+| **Per-Task Concurrency Key Contention** | Multiple tasks with same `(tenantId, concurrencyKey)` submitted. | `TaskAdmissionController` detects active task with identical key. | First task runs; remaining tasks remain `QUEUED` until first completes, maintaining strict logical mutual exclusion. |
+| **Dead-Letter Task Archival / Discard** | Operator discards irrecoverable task in DLQ. | `DlqService.archiveTask` releases lease and appends durable audit record `ARCHIVED: <reason>` and outbox event `TaskArchived`. | Historical execution attempts and audit log preserved for compliance without active retry eligibility. |
+| **Concurrent Duplicate Task Submission Race** | Two clients submit identical task with same `(tenantId, idempotencyKey)` simultaneously. | PostgreSQL unique constraint `uq_chronos_tasks_tenant_idempotency` raises exception on loser; `TransactionalTaskService` catches it and returns existing task. | Exactly one task row created; zero duplicate executions. |
 
-| Distributed Scenario | Implementation Phase | Planned Mitigation Mechanism |
-| :--- | :--- | :--- |
-| **API Gateway Throttling / DDoS** | Phase 09 | Rate-limiting bucket algorithms per tenant at REST ingress gateway. |
-| **Dynamic Worker Autoscaling Dropouts** | Phase 12 | Graceful node draining during autoscaler scale-down events via SIGTERM signal traps. |
 
 
 

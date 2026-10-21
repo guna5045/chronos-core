@@ -116,4 +116,19 @@ public class SchedulerProperties {
         }
         this.starvationBatchRatio = starvationBatchRatio;
     }
+
+    /**
+     * Multiplier applied to remaining batch quota to enlarge the candidate pool
+     * for tenant fairness interleaving.
+     * Default: 1.
+     */
+    private int candidatePoolMultiplier = 1;
+
+    public int getCandidatePoolMultiplier() {
+        return candidatePoolMultiplier;
+    }
+
+    public void setCandidatePoolMultiplier(int candidatePoolMultiplier) {
+        this.candidatePoolMultiplier = Math.max(1, candidatePoolMultiplier);
+    }
 }
