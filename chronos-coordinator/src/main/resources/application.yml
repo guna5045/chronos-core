@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: chronos-coordinator
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 8080
+
+logging:
+  level:
+    root: INFO
+    com.chronoscore: DEBUG

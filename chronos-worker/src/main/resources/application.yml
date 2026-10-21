@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: chronos-worker
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 8081
+
+logging:
+  level:
+    root: INFO
+    com.chronoscore: DEBUG
