@@ -1,7 +1,7 @@
 # Chronos Core - Developer Setup & Contribution Guide
 
 ## Status
-- **Current Phase**: Phase 02 (Core Domain Model & Shared Contracts)
+- **Current Phase**: Phase 05 (Worker Cluster & gRPC Communication)
 
 ---
 
@@ -130,19 +130,56 @@ The coordinator reads its coordination and Redis configuration through standard 
 
 ---
 
-## 5. Module Responsibilities
+## 5. Worker Cluster Development & gRPC Configuration (Phase 05)
+
+### 5.1 Running Coordinator & Worker Locally
+To start the Coordinator gRPC server and a Worker node locally:
+
+1. **Start Infrastructure**:
+   ```bash
+   cd infrastructure/compose
+   docker compose up -d
+   ```
+
+2. **Start Coordinator**:
+   ```bash
+   mvn spring-boot:run -pl chronos-coordinator
+   ```
+   The Coordinator binds Netty gRPC server to `localhost:9090`.
+
+3. **Start Worker**:
+   ```bash
+   mvn spring-boot:run -pl chronos-worker
+   ```
+   The Worker registers with the Coordinator, starts its Netty gRPC server on `localhost:9091`, and begins streaming heartbeats every 1,000ms.
+
+### 5.2 Worker Environment Variables
+
+| Variable | Description | Development Default |
+| :--- | :--- | :--- |
+| `CHRONOS_WORKER_ENABLED` | Enable/disable worker runtime | `true` |
+| `CHRONOS_WORKER_ID` | Unique worker instance identifier | `worker-local-01` |
+| `CHRONOS_WORKER_PORT` | Worker gRPC listening port | `9091` |
+| `CHRONOS_WORKER_MAX_CONCURRENCY` | Maximum concurrent virtual threads | `16` |
+| `CHRONOS_COORDINATOR_HOST` | Coordinator hostname | `localhost` |
+| `CHRONOS_COORDINATOR_PORT` | Coordinator gRPC listening port | `9090` |
+| `CHRONOS_HEARTBEAT_INTERVAL_MS`| Streaming heartbeat interval | `1000` |
+
+---
+
+## 6. Module Responsibilities
 
 | Module | Primary Responsibility |
 | :--- | :--- |
 | **`chronos-common`** | Core domain models (`Task`, `ExecutionAttempt`), enums (`TaskStatus`, `TaskPriority`), state machine, validation rules, shared DTOs, and Protobuf schemas. **Strictly zero business logic.** |
-| **`chronos-coordinator`** | Active-passive leader lease election, task priority scheduling, DAG execution engine, persistence, and cluster management. |
-| **`chronos-worker`** | Worker execution runtime, task cancellation enforcement, local resource monitoring, and gRPC heartbeat reporting. |
+| **`chronos-coordinator`** | Active-passive leader lease election, task priority scheduling, DAG execution engine, persistence, cluster management, and in-memory worker registry. |
+| **`chronos-worker`** | Worker execution runtime, Java 21 virtual thread executor, task cancellation enforcement, and gRPC heartbeat reporting. |
 | **`chronos-ai`** | Dedicated, isolated module boundary reserved for the AI Workflow and AI Operations agents. |
 | **`chronos-dashboard`** | React + TypeScript + Vite engineering control plane for cluster visibility and operations. |
 
 ---
 
-## 6. Frontend Build Instructions
+## 7. Frontend Build Instructions
 
 ```bash
 cd chronos-dashboard
@@ -154,5 +191,6 @@ To run the local Vite development server:
 npm run dev
 ```
 Accessible at: `http://localhost:5173`.
+
 
 

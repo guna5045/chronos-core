@@ -8,6 +8,18 @@ spring:
 server:
   port: 8081
 
+chronos:
+  worker:
+    enabled: ${CHRONOS_WORKER_ENABLED:true}
+    id: ${CHRONOS_WORKER_ID:}
+    hostname: ${CHRONOS_WORKER_HOSTNAME:}
+    port: ${CHRONOS_WORKER_PORT:9091}
+    max-concurrency: ${CHRONOS_WORKER_MAX_CONCURRENCY:8}
+    coordinator-host: ${CHRONOS_COORDINATOR_HOST:localhost}
+    coordinator-port: ${CHRONOS_COORDINATOR_PORT:9090}
+    heartbeat:
+      interval: ${CHRONOS_WORKER_HEARTBEAT_INTERVAL:1000ms}
+
 logging:
   level:
     root: INFO

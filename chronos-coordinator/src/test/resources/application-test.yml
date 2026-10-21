@@ -22,4 +22,10 @@ chronos:
     leader-lease-duration: 5s
     leader-renewal-interval: 1500ms
     task-lock-ttl: 30s
+  coordinator:
+    grpc:
+      enabled: false
+      port: 0
+    cluster:
+      enabled: false
 

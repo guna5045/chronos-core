@@ -1,7 +1,7 @@
 # Chronos Core - Failure Modes & Resiliency Analysis
 
 ## Status
-- **Current Phase**: Phase 02 (Core Domain Model & Shared Contracts)
+- **Current Phase**: Phase 05 (Worker Cluster & gRPC Communication)
 
 ---
 
@@ -43,14 +43,28 @@
 
 ---
 
-## 4. Distributed System Failure Modes (Planned - Future Phases)
+## 4. Worker Cluster & gRPC Failure Modes (Active in Phase 05)
+
+| Failure Scenario | Cluster Impact | Detection & Mitigation | Resulting State |
+| :--- | :--- | :--- | :--- |
+| **Transient Heartbeat Miss (Network Glitch)** | Worker fails to deliver heartbeat ping for > 3,000ms. | `WorkerHealthMonitor` detects `Instant.now() - lastHeartbeatAt > 3000ms`. | Worker transitions to `SUSPECTED`. Excluded from new task dispatch. |
+| **Worker Recovery after Delay** | Worker in `SUSPECTED` state resumes heartbeat stream. | Coordinator receives valid ping matching registered `sessionId`. `WorkerRegistry` restores worker to `ACTIVE`. | Restored to `ACTIVE` without requiring full re-registration cycle. |
+| **Dead Worker Eviction** | Worker abruptly crashes or network permanently severed for > 6,000ms. | `WorkerHealthMonitor` detects elapsed time > 6,000ms. | Worker transitions to `REMOVED` and is evicted from memory. In-flight tasks become candidates for recovery. |
+| **Stale Session Reconnect (Zombie Worker)** | Worker reboots or resumes after pause, attempting heartbeats with previous `sessionId`. | Coordinator verifies `sessionId` against active registry snapshot. Mismatch detected. | Heartbeat rejected with `STALE_SESSION`; worker instructed to perform clean re-registration. |
+| **Worker Capacity Saturation** | Dispatch sent to worker whose virtual thread executor has reached `maxConcurrency`. | `VirtualThreadTaskExecutor` atomic CAS fails. Worker returns `accepted = false` with `CAPACITY_EXHAUSTED`. | Coordinator aborts assignment and worker remains stable without thread pool exhaustion. |
+| **Dispatch / Cancellation RPC Timeout** | Worker node is slow or unresponsive during task dispatch or cancellation call. | `WorkerDispatchClient` enforces a strict 5,000ms gRPC deadline via `withDeadlineAfter(...)`. | Call fails fast with `DEADLINE_EXCEEDED`; coordinator prevents thread hanging. |
+| **Coordinator Failover Re-Registration** | Coordinator leader dies; follower takes over. Worker detects broken gRPC stream. | Worker client catches stream termination, triggers exponential reconnect backoff, and performs fresh registration handshake. | Worker acquires new `sessionId` from new coordinator and resumes heartbeat stream seamlessly. |
+
+---
+
+## 5. Distributed System Failure Modes (Planned - Future Phases)
 
 The following distributed failure modes represent the planned operational resiliency architecture:
 
 | Distributed Scenario | Implementation Phase | Planned Mitigation Mechanism |
 | :--- | :--- | :--- |
-| **Worker Node Crash / Disconnection** | Phase 06 | Missing gRPC heartbeats (threshold 3 beats). Worker marked `UNREACHABLE`; in-flight tasks re-queued. |
-| **Transient Database Outage** | Phase 03 | HikariCP reconnect backpressure; incoming requests rejected with 503 until connection pool restored. |
-| **Worker Execution Timeout** | Phase 06 | Coordinator detects attempt elapsed > task timeout. Marks attempt `FAILED` and initiates retry or DLQ transition. |
+| **Orphaned In-Flight Task Recovery** | Phase 06 | Coordinator detects evicted worker had active tasks. State machine marks attempts `TIMED_OUT` and re-queues tasks. |
+| **Transient Database Outage** | Phase 07 | HikariCP reconnect backpressure; incoming requests rejected with 503 until connection pool restored. |
 | **Worker Resource Starvation** | Phase 07 | Worker reports CPU/memory load in heartbeats; coordinator applies backpressure and throttles dispatches. |
+
 

@@ -1,8 +1,8 @@
 # Chronos Core - API & Shared Contracts Specification
 
 ## Status
-- **Current Phase**: Phase 02 (Core Domain Model & Shared Contracts)
-- **Specification Status**: Active Domain Contracts & Protocol Buffer Wire Schemas
+- **Current Phase**: Phase 05 (Worker Cluster & gRPC Communication)
+- **Specification Status**: Active Domain Contracts, Protocol Buffer Wire Schemas, & gRPC Service Interfaces
 - **REST API Status**: *Deferred to Phase 09 (Planned)*
 
 ---
@@ -64,24 +64,27 @@ Binary serialization schema used for inter-node communication between Coordinato
 ### 2.1 Core Messages
 - `ProtoTask`: Wire representation of a task definition.
 - `ProtoTaskAssignment`: Dispatch payload delivered to an assigned worker node.
+- `ProtoDispatchTaskResponse`: Worker response indicating acceptance or capacity exhaustion.
 - `ProtoTaskResult`: Result payload reported by a worker upon completion or failure.
-- `ProtoTaskStateUpdate`: Real-time state transition telemetry.
+- `ProtoReportTaskResultRequest` / `ProtoReportTaskResultResponse`: Result reporting envelopes.
+- `ProtoTaskStateUpdate` / `ProtoTaskStateUpdateResponse`: Real-time state transition telemetry.
 - `ProtoWorkerIdentity`: Worker capability and connection metadata.
-- `ProtoHeartbeatPing` / `ProtoHeartbeatPong`: Liveness and cluster load telemetry with epoch fencing tokens.
-- `ProtoTaskCancelRequest` / `ProtoTaskCancelResponse`: Explicit cancellation messaging.
+- `ProtoWorkerRegistrationRequest` / `ProtoWorkerRegistrationResponse`: Registration handshake with assigned `sessionId`.
+- `ProtoHeartbeatPing` / `ProtoHeartbeatPong`: Liveness and cluster load telemetry with epoch fencing tokens and session IDs.
+- `ProtoCancelTaskRequest` / `ProtoCancelTaskResponse`: Explicit cancellation messaging.
 
-### 2.2 Wire Service Signatures (Runtime Implementation Deferred to Phase 06)
+### 2.2 Wire Service Signatures (Implemented in Phase 05)
 ```protobuf
-service WorkerService {
-  rpc RegisterWorker (ProtoWorkerIdentity) returns (ProtoHeartbeatPong);
+service TaskCoordinationService {
+  rpc RegisterWorker (ProtoWorkerRegistrationRequest) returns (ProtoWorkerRegistrationResponse);
   rpc StreamHeartbeat (stream ProtoHeartbeatPing) returns (stream ProtoHeartbeatPong);
-  rpc DispatchTask (ProtoTaskAssignment) returns (ProtoTaskStateUpdate);
-  rpc CancelTask (ProtoTaskCancelRequest) returns (ProtoTaskCancelResponse);
+  rpc UpdateTaskState (ProtoTaskStateUpdate) returns (ProtoTaskStateUpdateResponse);
+  rpc ReportTaskResult (ProtoReportTaskResultRequest) returns (ProtoReportTaskResultResponse);
 }
 
-service TaskCoordinationService {
-  rpc UpdateTaskState (ProtoTaskStateUpdate) returns (ProtoHeartbeatPong);
-  rpc ReportTaskResult (ProtoTaskResult) returns (ProtoHeartbeatPong);
+service WorkerService {
+  rpc DispatchTask (ProtoTaskAssignment) returns (ProtoDispatchTaskResponse);
+  rpc CancelTask (ProtoCancelTaskRequest) returns (ProtoCancelTaskResponse);
 }
 ```
 
@@ -134,10 +137,45 @@ Generational leader epoch fencing service:
 
 ---
 
-## 5. Future REST API Endpoints (Phase 09 Blueprint)
+## 5. Worker Cluster Coordination & Runtime Contracts
+
+Introduced in Phase 05 for coordinator-worker topology management and task execution:
+
+### 5.1 `WorkerRegistry` (`com.chronoscore.coordinator.cluster`)
+Thread-safe in-memory cluster registry maintaining active worker node sessions:
+- `WorkerNode registerWorker(String workerId, String hostname, int port, int maxConcurrency, List<String> capabilities, long processId)`: Atomically registers a worker and returns a new session ID.
+- `boolean recordHeartbeat(String workerId, String sessionId, int activeTasks, int availableCapacity)`: Updates liveness timestamp and capacity; rejects stale sessions.
+- `Optional<WorkerNode> getWorker(String workerId)`: Retrieves snapshot of a registered worker.
+- `List<WorkerNode> getActiveWorkers()`: Returns all active workers available for dispatch.
+- `List<WorkerNode> getAllWorkers()`: Returns all registered nodes regardless of state.
+- `boolean updateWorkerState(String workerId, WorkerState newState)`: Transitions worker state (`REGISTERING`, `ACTIVE`, `SUSPECTED`, `REMOVED`).
+- `boolean removeWorker(String workerId)`: Evicts worker from in-memory tracking.
+
+### 5.2 `WorkerDispatchClient` (`com.chronoscore.coordinator.cluster`)
+Coordinator dispatch client communicating with worker gRPC endpoints:
+- `ProtoDispatchTaskResponse dispatchTask(WorkerNode worker, ProtoTaskAssignment assignment)`: Sends task assignment with 5-second deadline.
+- `ProtoCancelTaskResponse cancelTask(WorkerNode worker, String taskId, String reason)`: Sends cooperative cancellation request with 5-second deadline.
+
+### 5.3 `TaskExecutor` (`com.chronoscore.worker.execution`)
+Java 21 Virtual Thread-backed task execution runtime on worker instances:
+- `CompletableFuture<TaskExecutionResult> executeTask(ProtoTaskAssignment assignment)`: Submits task to virtual thread; enforces atomic capacity gating.
+- `boolean cancelTask(String taskId, String reason)`: Signals cooperative cancellation and interrupts running virtual thread.
+- `int getActiveTaskCount()` / `int getMaxConcurrency()` / `boolean hasAvailableCapacity()`: Capacity interrogation.
+- `void shutdown()`: Cooperative termination draining active virtual threads.
+
+### 5.4 `CoordinatorClient` (`com.chronoscore.worker.grpc`)
+Worker client interface communicating with Coordinator:
+- `ProtoWorkerRegistrationResponse register(ProtoWorkerRegistrationRequest request)`: Performs initial registration handshake.
+- `StreamObserver<ProtoHeartbeatPing> openHeartbeatStream(StreamObserver<ProtoHeartbeatPong> responseObserver)`: Establishes bidirectional streaming heartbeat.
+- `ProtoReportTaskResultResponse reportResult(ProtoReportTaskResultRequest request)`: Submits terminal attempt outcomes to coordinator.
+
+---
+
+## 6. Future REST API Endpoints (Phase 09 Blueprint)
 
 > **Notice**: The REST HTTP gateway endpoints are deferred to Phase 09.
 > Future endpoints will expose task submission (`POST /api/v1/tasks`), retrieval (`GET /api/v1/tasks/{id}`),
 > cancellation (`POST /api/v1/tasks/{id}/cancel`), and cluster topology visibility (`GET /api/v1/cluster/overview`).
+
 
 

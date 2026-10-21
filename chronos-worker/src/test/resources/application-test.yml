@@ -1,0 +1,9 @@
+chronos:
+  worker:
+    enabled: false
+    port: 0
+
+logging:
+  level:
+    root: INFO
+    com.chronoscore: DEBUG

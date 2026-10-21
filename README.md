@@ -70,21 +70,25 @@ chronos-core/
 
 ## 6. Development Status
 
-> **Current Status**: **Phase 01: Project Foundation & Repository Setup**
+> **Current Status**: **Phase 05: Worker Cluster & gRPC Communication** Completed
 
-The repository is currently in its initial foundation phase. The multi-module backend structure, Java 21 compiler configuration, Spring Boot service entry points, frontend scaffold, and project guidelines are established and verified. No business logic, scheduling algorithms, or distributed mechanisms have been implemented yet.
+- [x] **Phase 01: Project Foundation & Repository Setup**
+- [x] **Phase 02: Core Domain Model & Shared Contracts**
+- [x] **Phase 03: PostgreSQL Persistence & Schema Migrations**
+- [x] **Phase 04: Redis Coordination & Lease-Based Leader Election**
+- [x] **Phase 05: Worker Cluster & gRPC Communication**
 
 ---
 
-## 7. Planned Development Phases
+## 7. Development Phases
 
-1. **Phase 01: Project Foundation & Repository Setup** *(Current)*
-2. **Phase 02: Core Domain Model & Shared Contracts**
-3. **Phase 03: PostgreSQL Persistence & Schema Migrations**
-4. **Phase 04: Redis Coordination & Lease-Based Leader Election**
-5. **Phase 05: Task State Machine & Fencing Token Execution Engine**
-6. **Phase 06: gRPC Communication & Worker Registration/Heartbeats**
-7. **Phase 07: Priority Scheduler & Retry/Dead-Letter Queue Subsystems**
+1. **Phase 01: Project Foundation & Repository Setup** *(Completed)*
+2. **Phase 02: Core Domain Model & Shared Contracts** *(Completed)*
+3. **Phase 03: PostgreSQL Persistence & Schema Migrations** *(Completed)*
+4. **Phase 04: Redis Coordination & Lease-Based Leader Election** *(Completed)*
+5. **Phase 05: Worker Cluster & gRPC Communication** *(Completed)*
+6. **Phase 06: Task Scheduling, Dispatch & Failure Recovery**
+7. **Phase 07: Priority Queues, Retry & Backoff Engine**
 8. **Phase 08: Workflow DAG Execution Engine & Versioning**
 9. **Phase 09: REST API Gateway & Security**
 10. **Phase 10: Engineering Control Plane (React Dashboard)**

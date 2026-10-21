@@ -101,6 +101,8 @@ message ProtoWorkerIdentity {
   int32 active_tasks = 6;
   string version = 7;
   google.protobuf.Timestamp registered_at = 8;
+  repeated string supported_task_types = 9;
+  int64 process_id = 10;
 }
 
 // Periodic heartbeat ping emitted by Worker
@@ -110,6 +112,8 @@ message ProtoHeartbeatPing {
   int32 active_tasks = 3;
   double cpu_usage_percent = 4;
   double memory_usage_percent = 5;
+  int32 available_capacity = 6;
+  string session_id = 7;
 }
 
 // Periodic heartbeat pong acknowledgment returned by Coordinator
@@ -118,6 +122,8 @@ message ProtoHeartbeatPong {
   int64 epoch_fencing_token = 2;
   google.protobuf.Timestamp timestamp = 3;
   bool acknowledged = 4;
+  string session_id = 5;
+  string error_message = 6;
 }
 
 // Task cancellation signal
@@ -135,7 +141,6 @@ message ProtoTaskCancelResponse {
 }
 
 // Directional gRPC service definitions for cluster communication
-// (Serialization contracts only; runtime implementation deferred to Phase 06)
 service WorkerService {
   rpc RegisterWorker (ProtoWorkerIdentity) returns (ProtoHeartbeatPong);
   rpc StreamHeartbeat (stream ProtoHeartbeatPing) returns (stream ProtoHeartbeatPong);
@@ -144,6 +149,8 @@ service WorkerService {
 }
 
 service TaskCoordinationService {
+  rpc RegisterWorker (ProtoWorkerIdentity) returns (ProtoHeartbeatPong);
+  rpc StreamHeartbeat (stream ProtoHeartbeatPing) returns (stream ProtoHeartbeatPong);
   rpc UpdateTaskState (ProtoTaskStateUpdate) returns (ProtoHeartbeatPong);
   rpc ReportTaskResult (ProtoTaskResult) returns (ProtoHeartbeatPong);
 }

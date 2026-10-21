@@ -342,3 +342,56 @@ Chronos Core explicitly declares the following execution semantics:
 - **Semantic Model**: Chronos Core provides **at-least-once delivery with idempotency and fencing-based stale-write protection**.
 - **No In-Memory Single-Node Fallbacks**: If Redis coordination infrastructure is unavailable, coordinators refuse to silently operate as a fake single-node cluster; they fail fast and log operational diagnostics.
 
+---
+
+## 7. Worker Cluster & gRPC Communication Architecture
+
+### 7.1 Separation of Concerns
+Phase 05 establishes the distributed worker execution tier. The architecture strictly isolates responsibilities:
+- **Coordinator**: Maintains cluster topology, in-memory worker registry, failure detection, task dispatch decisions, and durable PostgreSQL state transitions.
+- **Worker**: Manages local task concurrency via Java 21 virtual threads, reports heartbeats over persistent HTTP/2 streams, and delivers execution outcomes back to the Coordinator.
+- **Zero Database Exposure**: Workers have no direct access to PostgreSQL or Redis. All state transitions flow through gRPC contracts.
+
+### 7.2 gRPC Protocol Topology
+The network contract consists of two distinct gRPC services defined in `chronos_task_execution.proto`:
+
+1. **`TaskCoordinationService`** (Hosted on Coordinator, default port 9090):
+   - `RegisterWorker`: Synchronous registration handshake returning unique session IDs.
+   - `StreamHeartbeat`: Bidirectional HTTP/2 streaming ping/pong every 1000ms.
+   - `UpdateTaskState`: In-flight attempt status notifications.
+   - `ReportTaskResult`: Terminal attempt outcome reporting (`SUCCEEDED`, `FAILED`, `CANCELLED`).
+2. **`WorkerService`** (Hosted on Worker nodes, default port 9091+):
+   - `DispatchTask`: Non-blocking task assignment with explicit call deadlines.
+   - `CancelTask`: Preemption and interruption of active task attempts.
+
+```
+       COORDINATOR                               WORKER
+            │                                       │
+            │ <────── RegisterWorker (Unary) ───────│
+            │                                       │
+            │ <═══ StreamHeartbeat (Bidi Stream) ══>│
+            │                                       │
+            │ ──────── DispatchTask (Unary) ──────> │
+            │                                       │
+            │ <────── ReportTaskResult (Unary) ─────│
+```
+
+### 7.3 In-Memory Worker Registry & Session Lifecycle
+- Worker metadata and liveness are maintained in-memory within `InMemoryWorkerRegistry` on the active Coordinator.
+- High-frequency heartbeat writes are strictly prohibited from touching Redis or PostgreSQL.
+- Each registration assigns a cryptographically unique `sessionId` (UUID v4). Any message bearing an unrecognized or outdated `sessionId` is rejected immediately with a `STALE_SESSION` error, protecting against delayed or zombie worker interactions.
+
+### 7.4 Liveness Detection & Health State Machine
+The Coordinator runs `WorkerHealthMonitor` every 1,000ms to evaluate worker liveness:
+- `ACTIVE`: Heartbeat received within 3,000ms (`worker-suspect-timeout-ms`).
+- `SUSPECTED`: Heartbeat absent for > 3,000ms. Worker is marked ineligible for new task dispatch.
+- **Recovery**: Receipt of a valid heartbeat ping automatically restores a `SUSPECTED` worker to `ACTIVE`.
+- `REMOVED`: Heartbeat absent for > 6,000ms (`worker-eviction-timeout-ms`). Worker is evicted from memory, triggering failure handling for any assigned tasks.
+
+### 7.5 Virtual Thread Execution Engine
+Worker nodes leverage Java 21 Virtual Threads (`VirtualThreadTaskExecutor`):
+- Provides unbounded lightweight concurrency for I/O-intensive task payloads.
+- Bounded capacity gating via atomic CAS counters (`activeTasks.getAndUpdate(...)`) up to `maxConcurrency`.
+- Cooperative cancellation through thread interruption and atomic cancellation flags.
+
+

@@ -35,6 +35,15 @@ chronos:
     leader-lease-duration: ${CHRONOS_LEADER_LEASE_DURATION:5s}
     leader-renewal-interval: ${CHRONOS_LEADER_RENEWAL_INTERVAL:1500ms}
     task-lock-ttl: ${CHRONOS_TASK_LOCK_TTL:30s}
+  coordinator:
+    grpc:
+      enabled: ${CHRONOS_COORDINATOR_GRPC_ENABLED:true}
+      port: ${CHRONOS_COORDINATOR_GRPC_PORT:9090}
+    cluster:
+      enabled: ${CHRONOS_CLUSTER_ENABLED:true}
+      heartbeat-timeout: ${CHRONOS_WORKER_HEARTBEAT_TIMEOUT:3s}
+      eviction-timeout: ${CHRONOS_WORKER_EVICTION_TIMEOUT:6s}
+      health-check-interval: ${CHRONOS_WORKER_HEALTH_CHECK_INTERVAL:1s}
 
 server:
   port: 8080
