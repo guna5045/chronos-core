@@ -31,14 +31,26 @@
 
 ---
 
-## 3. Distributed System Failure Modes (Planned - Future Phases)
+## 3. Distributed Coordination Failure Modes (Active in Phase 04)
+
+| Failure Scenario | Distributed Impact | Detection & Mitigation | Resulting State |
+| :--- | :--- | :--- | :--- |
+| **Active Coordinator Crash** | The current leader abruptly dies without graceful shutdown. | Redis leader lock key TTL expires (5s). Follower coordinators attempt `SET chronos:leader:lock <id> NX EX 5`. Winner becomes new leader and increments `chronos:leader:epoch`. | Seamless failover to new leader; split-brain avoided. |
+| **Stale Leader Resumption (GC Pause)** | Leader node suffers a long GC pause (>5s). Lease expires; another node becomes leader with higher epoch. Old leader resumes. | Generational fencing tokens. When old leader attempts downstream operations or lease renewals, epoch check (`epoch < currentClusterEpoch`) rejects operations via `StaleLeaderException`. | Old leader detects ownership loss and demotes to `FOLLOWER`. |
+| **Lease Renewal Ownership Mismatch** | A slow coordinator attempts to extend its lease after another coordinator claimed leadership. | Atomic Lua script compares `redis.call('get', KEYS[1]) == ARGV[1]` before executing `EXPIRE`. Returns `0`. | Renewal returns `false`; caller transitions to `LEADERSHIP_LOST` and notifies listeners. |
+| **Stale Task Lock Release** | Task lock expires in Redis due to delayed execution. Another worker acquires the lock. First worker attempts late release. | Atomic Lua script compares `redis.call('get', KEYS[1]) == ARGV[1]` before executing `DEL`. Returns `0`. | Release returns `false`; newly acquired lock remains completely intact in Redis. |
+| **Redis Coordination Store Outage** | Redis becomes unreachable or experiences connection timeouts. | Operations catch Redis connection exceptions, log critical error alerts, transition coordinator to `FOLLOWER`/`LEADERSHIP_LOST`. Coordinators refuse to operate as uncoordinated rogue nodes. | Fail-safe: leader-only operations halted until Redis cluster connectivity is restored. |
+
+---
+
+## 4. Distributed System Failure Modes (Planned - Future Phases)
 
 The following distributed failure modes represent the planned operational resiliency architecture:
 
 | Distributed Scenario | Implementation Phase | Planned Mitigation Mechanism |
 | :--- | :--- | :--- |
-| **Active Coordinator Crash** | Phase 04 | Redis lease TTL expiration, standby promotion, monotonically incremented epoch fencing tokens. |
-| **Network Partition (Split Brain)** | Phase 04 / 05 | Fencing token validation on all persistent writes. Outdated leader writes rejected. |
 | **Worker Node Crash / Disconnection** | Phase 06 | Missing gRPC heartbeats (threshold 3 beats). Worker marked `UNREACHABLE`; in-flight tasks re-queued. |
 | **Transient Database Outage** | Phase 03 | HikariCP reconnect backpressure; incoming requests rejected with 503 until connection pool restored. |
-| **Redis Coordination Outage** | Phase 04 | Coordinators pause active dispatching to prevent dual leaders during coordination store loss. |
+| **Worker Execution Timeout** | Phase 06 | Coordinator detects attempt elapsed > task timeout. Marks attempt `FAILED` and initiates retry or DLQ transition. |
+| **Worker Resource Starvation** | Phase 07 | Worker reports CPU/memory load in heartbeats; coordinator applies backpressure and throttles dispatches. |
+

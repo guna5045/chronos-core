@@ -88,10 +88,49 @@ Migration scripts are located at:
 - When Docker is available, `PostgreSqlTestcontainersIT` verifies Flyway migrations and persistence operations against real PostgreSQL 16 in an isolated container.
 - For local or CI environments without Docker daemon access, all persistence repositories, optimistic concurrency tests, and transaction rollback tests execute using the integrated test profile (`application-test.yml`).
 
+---
+
+## 4. Redis Infrastructure & Distributed Coordination (Phase 04)
+
+### 4.1 Local Redis via Docker Compose
+To run Redis 7.2 alongside PostgreSQL for local coordination development:
+
+```bash
+cd infrastructure/compose
+docker compose up -d redis
+```
+
+To run both PostgreSQL and Redis together:
+```bash
+docker compose up -d
+```
+
+To inspect Redis logs or healthcheck:
+```bash
+docker compose logs -f redis
+docker compose ps
+```
+
+### 4.2 Coordination Environment Variables
+The coordinator reads its coordination and Redis configuration through standard environment variables with development defaults:
+
+| Variable | Description | Development Default |
+| :--- | :--- | :--- |
+| `CHRONOS_COORDINATION_ENABLED` | Enable/disable distributed leader loop | `true` |
+| `CHRONOS_COORDINATOR_ID` | Coordinator instance identifier | Hostname / generated |
+| `CHRONOS_LEADER_LEASE_DURATION` | Redis leader lock TTL | `5s` |
+| `CHRONOS_LEADER_RENEWAL_INTERVAL` | Scheduled lease renewal tick | `1500ms` |
+| `CHRONOS_TASK_LOCK_TTL` | Distributed task lock TTL | `30s` |
+| `CHRONOS_REDIS_HOST` | Redis server hostname | `localhost` |
+| `CHRONOS_REDIS_PORT` | Redis server port | `6379` |
+
+### 4.3 Redis Integration Testing
+- `RedisTestcontainersIT` verifies real Redis atomic lease election, epoch incrementation, Lua renewals, Lua safe releases, and distributed task lock semantics against an isolated Redis 7.2 container.
+- When Docker is not available in the local environment, `DockerClientFactory.instance().isDockerAvailable()` skips container startup cleanly while unit and concurrency tests (`LeaderElectionConcurrencyTest`, `DistributedLockConcurrencyTest`) execute in-memory with zero Docker dependency.
 
 ---
 
-## 4. Module Responsibilities
+## 5. Module Responsibilities
 
 | Module | Primary Responsibility |
 | :--- | :--- |
@@ -103,7 +142,7 @@ Migration scripts are located at:
 
 ---
 
-## 5. Frontend Build Instructions
+## 6. Frontend Build Instructions
 
 ```bash
 cd chronos-dashboard
@@ -115,4 +154,5 @@ To run the local Vite development server:
 npm run dev
 ```
 Accessible at: `http://localhost:5173`.
+
 

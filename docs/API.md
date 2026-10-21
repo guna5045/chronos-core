@@ -106,9 +106,38 @@ Transactional coordinator service enforcing atomic ACID persistence across state
 
 ---
 
-## 4. Future REST API Endpoints (Phase 09 Blueprint)
+## 4. Distributed Coordination Service Contracts (`com.chronoscore.coordinator.coordination`)
+
+Introduced in Phase 04 as foundational cluster coordination abstractions:
+
+### 4.1 `LeaderElectionService`
+Lease-based leader election interface:
+- `boolean tryAcquireLeadership()`: Atomically attempts lease acquisition (`SET NX EX 5`) and increments epoch (`INCR`).
+- `boolean renewLease()`: Periodically renews lease TTL via atomic Lua script verifying ownership.
+- `boolean releaseLeadership()`: Safely deletes lease via atomic Lua script verifying ownership on shutdown.
+- `boolean isLeader()`: Returns true if the coordinator currently holds a valid leadership lease.
+- `long getCurrentEpoch()`: Returns the active leader epoch or 0 if follower.
+- `LeaderIdentity getLeadershipIdentity()`: Returns immutable leadership snapshot (`coordinatorId`, `leaderEpoch`, `state`, `leaseExpiresAt`).
+- `void addListener(LeadershipStateListener listener)`: Registers callbacks for leadership acquisition and loss events.
+
+### 4.2 `DistributedLockService`
+Reusable distributed task lock interface:
+- `Optional<LockHandle> tryAcquire(String resource, Duration ttl)`: Atomically acquires lock with unique owner UUID (`SET NX EX`).
+- `boolean release(LockHandle handle)`: Safely releases lock via atomic Lua ownership check.
+- `boolean renew(LockHandle handle, Duration ttl)`: Atomically extends lock TTL via Lua script.
+- `boolean isOwner(LockHandle handle)`: Verifies whether the specified handle still owns the lock in Redis.
+
+### 4.3 `FencingTokenService`
+Generational leader epoch fencing service:
+- `FencingToken getCurrentFencingToken()`: Returns an active fencing token with leader identity and epoch.
+- `void validateFencingToken(FencingToken token)`: Validates that the token's epoch matches the latest cluster generation and throws `StaleLeaderException` if stale.
+
+---
+
+## 5. Future REST API Endpoints (Phase 09 Blueprint)
 
 > **Notice**: The REST HTTP gateway endpoints are deferred to Phase 09.
 > Future endpoints will expose task submission (`POST /api/v1/tasks`), retrieval (`GET /api/v1/tasks/{id}`),
 > cancellation (`POST /api/v1/tasks/{id}/cancel`), and cluster topology visibility (`GET /api/v1/cluster/overview`).
+
 

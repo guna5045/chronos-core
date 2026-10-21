@@ -1,8 +1,8 @@
 # Chronos Core - Architectural Specification
 
 ## Status
-- **Current Phase**: Phase 03 (Persistence & Durable State)
-- **Document Version**: 0.3.0
+- **Current Phase**: Phase 04 (Distributed Coordination)
+- **Document Version**: 0.4.0
 
 ---
 
@@ -231,4 +231,114 @@ The transactional outbox pattern guarantees at-least-once event publication with
 - When a task is created or transitioned, the corresponding outbox event is inserted in the exact same database transaction.
 - An application or worker crash immediately after a state update will not result in lost events.
 - Asynchronous outbox dispatching to message brokers (e.g., Kafka) will be introduced in subsequent phases; no external broker is connected in Phase 03.
+
+---
+
+## 6. Distributed Coordination Layer (`chronos-coordinator`)
+
+Phase 04 introduces the distributed coordination infrastructure required for multi-coordinator deployments.
+
+> **Architectural Precedence & Distributed Systems Truth**:  
+> Chronos Core uses lease-based leader election with fencing tokens. It is not a consensus protocol such as Raft or Paxos. Do not describe Redis lease-based leader election as "consensus-backed" or "Raft/Paxos".  
+> Furthermore, Redis acts solely as the ephemeral coordination and lock store. PostgreSQL remains the single durable source of truth for task state and execution history.
+
+### 6.1 Lease-Based Leader Election Lifecycle
+
+In a multi-coordinator cluster, exactly one coordinator instance acts as the active `LEADER` responsible for cluster orchestration, while other instances operate as `FOLLOWER` standbys ready for failover.
+
+#### Normal Operational Cycle
+```
+Coordinator
+     ↓
+Acquire Redis lease (`SET chronos:leader:lock <coordinator-id> NX EX 5`)
+     ↓
+Leader (Assigned monotonically incremented epoch: `INCR chronos:leader:epoch`)
+     ↓
+Renew lease periodically via atomic Lua script (every 1.5s)
+     ↓
+Leadership maintained
+```
+
+#### Lease Expiry & Failover Cycle
+```
+Coordinator A (Leader, Epoch 1)
+     ↓
+Network pause / GC pause / crash
+     ↓
+Redis lease TTL expires (5 seconds)
+     ↓
+Coordinator B acquires lease (`SET NX EX 5`)
+     ↓
+New leader epoch incremented (Epoch 2)
+     ↓
+Coordinator A resumes from pause
+     ↓
+Attempted renewal/release rejected by Redis Lua check
+     ↓
+Coordinator A detects ownership loss -> transitions to FOLLOWER
+```
+
+### 6.2 Fencing Tokens & Stale Leader Protection
+
+A fundamental distributed systems vulnerability in lease-based systems is the **stale leader problem**: a coordinator that experiences a stop-the-world garbage collection pause or network blip may have its lease expire while it is paused. When it resumes, it might believe it is still the leader and attempt state-modifying operations against downstream storage.
+
+To neutralize this hazard:
+1. **Generational Epoch Fencing**: Every time a coordinator acquires leadership, it executes an atomic `INCR chronos:leader:epoch`. This provides a monotonically increasing integer epoch.
+2. **Epoch Verification**: All downstream coordination, dispatch, and state-modification operations check the leader epoch against the latest cluster epoch. Any operation carrying a stale epoch (`epoch < currentClusterEpoch`) is immediately rejected with a `StaleLeaderException`.
+3. **Task.version vs. Leader Epoch Distinction**:
+   - `Task.version`: Database optimistic concurrency version on individual PostgreSQL task rows. Guards against concurrent lost updates on specific tasks.
+   - `leaderEpoch`: Cluster-wide generation counter protecting leadership terms from zombie or stale coordinators.
+   - **These two mechanisms serve distinct orthogonal concerns and are never conflated.**
+
+### 6.3 Distributed Task Locks
+
+To protect individual tasks during scheduling, state transitions, and worker assignment across multiple coordinator nodes, Chronos Core implements a reusable distributed lock abstraction:
+
+- **Key Namespace**: `chronos:task:lock:{resourceId}` (constructed centrally via `RedisKeyFactory`).
+- **Owner Token**: A cryptographic UUID generated per acquisition (`UUID.randomUUID().toString()`). Never rely solely on coordinator ID, ensuring distinct attempts by the same coordinator remain isolated.
+- **Bounded TTL**: Locks are strictly time-bounded (default: 30 seconds, configurable via `chronos.coordination.task-lock-ttl`) to guarantee automatic reclamation if a holding node crashes.
+- **Atomic Acquisition**: Uses Redis `SET key ownerToken NX EX ttl` in a single command, eliminating the split-second race condition inherent in separate `SETNX` + `EXPIRE`.
+- **Atomic Safe Release via Lua Script**:
+  ```lua
+  if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('del', KEYS[1])
+  else
+      return 0
+  end
+  ```
+  This prevents a stale worker or coordinator that suffered a delay from inadvertently deleting a lock that has expired and been acquired by another node.
+- **Atomic Lease Extension via Lua Script**:
+  ```lua
+  if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('expire', KEYS[1], ARGV[2])
+  else
+      return 0
+  end
+  ```
+
+### 6.4 Coordination State Model
+
+Coordinator nodes deterministically transition across three explicit states:
+- `FOLLOWER`: Standby coordinator monitoring the cluster and periodically attempting leadership acquisition.
+- `LEADER`: Active coordinator holding the unexpired Redis lease, maintaining periodic renewals, and issuing fencing tokens.
+- `LEADERSHIP_LOST`: Intermediate event state triggered when renewal fails or ownership is lost. Cleanly notifies listeners to abort leader-only work before returning to `FOLLOWER`.
+
+```
+  ┌──────────┐      acquire lease       ┌──────────┐
+  │ FOLLOWER │ ───────────────────────► │  LEADER  │
+  └──────────┘                          └────┬─────┘
+       ▲                                     │ renewal failure /
+       │               transition            │ ownership loss
+       └─────────────────────────────────────▼
+                                      ┌───────────────┐
+                                      │LEADERSHIP_LOST│
+                                      └───────────────┘
+```
+
+### 6.5 Correctness Guarantees & Non-Claims
+
+Chronos Core explicitly declares the following execution semantics:
+- **No False Claims**: We do **not** claim "exactly-once execution" or "distributed consensus".
+- **Semantic Model**: Chronos Core provides **at-least-once delivery with idempotency and fencing-based stale-write protection**.
+- **No In-Memory Single-Node Fallbacks**: If Redis coordination infrastructure is unavailable, coordinators refuse to silently operate as a fake single-node cluster; they fail fast and log operational diagnostics.
 

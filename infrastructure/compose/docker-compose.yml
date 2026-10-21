@@ -20,10 +20,29 @@ services:
       start_period: 10s
     networks:
       - chronos-network
+  redis:
+    image: redis:7.2-alpine
+    container_name: chronos-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel notice
+    ports:
+      - "${CHRONOS_REDIS_PORT:-6379}:6379"
+    volumes:
+      - chronos_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - chronos-network
 
 volumes:
   chronos_pgdata:
     name: chronos_pgdata
+  chronos_redisdata:
+    name: chronos_redisdata
 
 networks:
   chronos-network:

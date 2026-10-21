@@ -14,3 +14,12 @@ logging:
     root: INFO
     org.flywaydb: DEBUG
     com.chronoscore: DEBUG
+
+chronos:
+  coordination:
+    enabled: false
+    coordinator-id: test-coordinator-01
+    leader-lease-duration: 5s
+    leader-renewal-interval: 1500ms
+    task-lock-ttl: 30s
+

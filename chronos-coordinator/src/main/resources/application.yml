@@ -21,6 +21,20 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
+  data:
+    redis:
+      host: ${CHRONOS_REDIS_HOST:localhost}
+      port: ${CHRONOS_REDIS_PORT:6379}
+      password: ${CHRONOS_REDIS_PASSWORD:}
+      timeout: 2000ms
+
+chronos:
+  coordination:
+    enabled: ${CHRONOS_COORDINATION_ENABLED:true}
+    coordinator-id: ${CHRONOS_COORDINATOR_ID:}
+    leader-lease-duration: ${CHRONOS_LEADER_LEASE_DURATION:5s}
+    leader-renewal-interval: ${CHRONOS_LEADER_RENEWAL_INTERVAL:1500ms}
+    task-lock-ttl: ${CHRONOS_TASK_LOCK_TTL:30s}
 
 server:
   port: 8080
