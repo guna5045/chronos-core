@@ -232,6 +232,46 @@ public class JdbcWorkflowRepository implements WorkflowRepository {
                 .build();
     }
 
+    @Override
+    public List<WorkflowDefinition> findAllWorkflows(int limit, int offset) {
+        String sql = "SELECT workflow_id, name, description, created_at, updated_at " +
+                "FROM chronos_workflows ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("limit", Math.max(1, limit))
+                .addValue("offset", Math.max(0, offset));
+        return jdbcTemplate.query(sql, params, new WorkflowDefinitionRowMapper());
+    }
+
+    @Override
+    public int countWorkflows() {
+        String sql = "SELECT COUNT(*) FROM chronos_workflows";
+        Integer count = jdbcTemplate.queryForObject(sql, new MapSqlParameterSource(), Integer.class);
+        return count != null ? count : 0;
+    }
+
+    @Override
+    public List<WorkflowVersion> findVersionsByWorkflowId(UUID workflowId) {
+        String sql = "SELECT version_id, workflow_id, version, status, created_at " +
+                "FROM chronos_workflow_versions WHERE workflow_id = :workflowId ORDER BY version ASC";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("workflowId", workflowId);
+        return jdbcTemplate.query(sql, params, (rs, rowNum) -> {
+            UUID versionId = rs.getObject("version_id", UUID.class);
+            List<WorkflowNodeDefinition> nodes = findNodesByVersion(versionId);
+            List<WorkflowEdge> edges = findEdgesByVersion(versionId);
+            Timestamp createdAt = rs.getTimestamp("created_at");
+            return WorkflowVersion.builder()
+                    .versionId(versionId)
+                    .workflowId(rs.getObject("workflow_id", UUID.class))
+                    .version(rs.getInt("version"))
+                    .status(WorkflowVersionStatus.valueOf(rs.getString("status")))
+                    .nodes(nodes)
+                    .edges(edges)
+                    .createdAt(createdAt != null ? createdAt.toInstant() : Instant.now())
+                    .build();
+        });
+    }
+
     private static class WorkflowDefinitionRowMapper implements RowMapper<WorkflowDefinition> {
         @Override
         public WorkflowDefinition mapRow(ResultSet rs, int rowNum) throws SQLException {

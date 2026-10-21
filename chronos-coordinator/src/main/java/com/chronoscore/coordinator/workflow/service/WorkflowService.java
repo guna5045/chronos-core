@@ -172,4 +172,16 @@ public class WorkflowService {
     public Optional<WorkflowVersion> getVersionByNumber(UUID workflowId, int version) {
         return workflowRepository.findVersionByNumber(workflowId, version);
     }
+
+    public List<WorkflowDefinition> listWorkflows(int limit, int offset) {
+        return workflowRepository.findAllWorkflows(limit, offset);
+    }
+
+    public int countWorkflows() {
+        return workflowRepository.countWorkflows();
+    }
+
+    public List<WorkflowVersion> getWorkflowVersions(UUID workflowId) {
+        return workflowRepository.findVersionsByWorkflowId(workflowId);
+    }
 }

@@ -1,9 +1,9 @@
 # Chronos Core - API & Shared Contracts Specification
 
 ## Status
-- **Current Phase**: Phase 08 (Workflow & DAG Orchestration)
-- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, Fault Tolerance / Recovery Services, and Workflow & DAG Orchestration Services
-- **REST API Status**: *Deferred to Phase 09 (Planned)*
+- **Current Phase**: Phase 10 (REST API & Security Layer)
+- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, Fault Tolerance / Recovery Services, Workflow & DAG Services, and Production REST API Gateway
+- **REST API Status**: Active (`/api/v1`) with OAuth2/JWT Authentication, RBAC, and Tenant Isolation
 
 ---
 
@@ -302,10 +302,152 @@ Phase 09 introduces internal service layer contracts for admission control, quot
 
 ---
 
-## 10. Future REST API Endpoints (Phase 10 Blueprint)
+## 10. Production REST API Specification (Phase 10)
 
-> **Notice**: The REST HTTP gateway endpoints are deferred to Phase 10.
-> Future endpoints will expose task submission (`POST /api/v1/tasks`), retrieval (`GET /api/v1/tasks/{id}`),
-> cancellation (`POST /api/v1/tasks/{id}/cancel`), DLQ management (`GET /api/v1/dlq/tasks`, `POST /api/v1/dlq/tasks/{id}/replay`, `POST /api/v1/dlq/tasks/{id}/archive`),
-> workflow definition (`POST /api/v1/workflows`), workflow execution (`POST /api/v1/workflows/{id}/executions`),
-> tenant policies (`GET/PUT /api/v1/tenants/{tenantId}/policy`), and cluster topology visibility (`GET /api/v1/cluster/overview`).
+The Chronos Core REST API is exposed under `/api/v1` and secured with OAuth2 / JWT Bearer authentication, Role-Based Access Control (`VIEWER`, `OPERATOR`, `ADMIN`), and tenant isolation.
+
+### 10.1 Global Headers & Protocols
+- **Authentication**: `Authorization: Bearer <JWT>`
+- **Idempotency**: `Idempotency-Key: <unique-key>` (supported on task submission; overrides request body key if both present)
+- **Content Type**: `Content-Type: application/json`
+
+### 10.2 Standard Error Response Model (`ApiErrorResponse`)
+```json
+{
+  "timestamp": "2026-10-21T18:00:00Z",
+  "status": 400,
+  "code": "VALIDATION_ERROR",
+  "message": "Validation failed for request",
+  "path": "/api/v1/tasks",
+  "fieldErrors": {
+    "taskType": "taskType is required"
+  }
+}
+```
+
+### 10.3 Pagination Model (`PagedResponse<T>`)
+```json
+{
+  "items": [...],
+  "page": 0,
+  "size": 20,
+  "totalElements": 150,
+  "totalPages": 8,
+  "hasNext": true,
+  "hasPrevious": false
+}
+```
+Query parameters: `page` (default: 0), `size` (default: 20, maximum: 100).
+
+---
+
+### 10.4 Task Endpoints (`/api/v1/tasks`)
+
+| Method | Path | Required Role | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/tasks` | `OPERATOR`, `ADMIN` | Submit a new task with admission control and idempotency. |
+| `GET` | `/api/v1/tasks` | `VIEWER`, `OPERATOR`, `ADMIN` | Paginated task listing with filters (`tenantId`, `status`, `taskType`, `workerId`). |
+| `GET` | `/api/v1/tasks/{taskId}` | `VIEWER`, `OPERATOR`, `ADMIN` | Retrieve detailed task status, attempt counters, and execution metadata. |
+| `POST` | `/api/v1/tasks/{taskId}/retry` | `OPERATOR`, `ADMIN` | Manually requeue a failed or DLQ task for re-execution. |
+| `POST` | `/api/v1/tasks/{taskId}/cancel` | `OPERATOR`, `ADMIN` | Cooperatively cancel an active or queued task. |
+
+#### `POST /api/v1/tasks` Request Body
+```json
+{
+  "taskType": "DATA_AGGREGATION",
+  "payload": "{\"dataset\":\"2026-Q3\"}",
+  "priority": "HIGH",
+  "tenantId": "tenant-alpha",
+  "idempotencyKey": "batch-2026-10-21-001",
+  "scheduledAt": "2026-10-21T19:00:00Z",
+  "deadline": "2026-10-21T21:00:00Z",
+  "timeout": "PT30M",
+  "maxAttempts": 5,
+  "concurrencyKey": "customer-1002"
+}
+```
+- **Responses**:
+  - `201 Created`: Newly created task with `Location: /api/v1/tasks/{taskId}` header.
+  - `200 OK`: Existing deduplicated task matching `idempotencyKey`.
+
+---
+
+### 10.5 Workflow Endpoints (`/api/v1/workflows`)
+
+| Method | Path | Required Role | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/v1/workflows` | `OPERATOR`, `ADMIN` | Register a new workflow namespace. |
+| `GET` | `/api/v1/workflows` | `VIEWER`, `OPERATOR`, `ADMIN` | List all registered workflows. |
+| `GET` | `/api/v1/workflows/{workflowId}` | `VIEWER`, `OPERATOR`, `ADMIN` | Inspect workflow definition. |
+| `GET` | `/api/v1/workflows/{workflowId}/versions` | `VIEWER`, `OPERATOR`, `ADMIN` | Inspect all draft and published versions for a workflow. |
+| `POST` | `/api/v1/workflows/{workflowId}/versions` | `ADMIN` | Create a new draft workflow version with nodes and edges. |
+| `POST` | `/api/v1/workflows/{workflowId}/versions/{version}/publish` | `ADMIN` | Validate DAG and lock version into immutable `PUBLISHED` state. |
+| `POST` | `/api/v1/workflows/{workflowId}/versions/{version}/deprecate` | `ADMIN` | Deprecate version from starting new executions. |
+| `POST` | `/api/v1/workflows/{workflowId}/execute` | `OPERATOR`, `ADMIN` | Instantiate a workflow execution for a published version. |
+| `GET` | `/api/v1/workflow-executions/{executionId}` | `VIEWER`, `OPERATOR`, `ADMIN` | Inspect execution status, node states, and Chronos task mappings. |
+| `POST` | `/api/v1/workflow-executions/{executionId}/cancel` | `OPERATOR`, `ADMIN` | Cancel workflow execution and issue cancellation to active worker tasks. |
+
+#### `POST /api/v1/workflows/{workflowId}/versions` Request Body
+```json
+{
+  "nodes": [
+    { "nodeId": "extract", "taskType": "DATA_EXTRACT", "payload": "{}", "maxAttempts": 3 },
+    { "nodeId": "transform", "taskType": "DATA_TRANSFORM", "payload": "{}", "maxAttempts": 3 },
+    { "nodeId": "load", "taskType": "DATA_LOAD", "payload": "{}", "maxAttempts": 3 }
+  ],
+  "edges": [
+    { "sourceNodeId": "extract", "targetNodeId": "transform" },
+    { "sourceNodeId": "transform", "targetNodeId": "load" }
+  ]
+}
+```
+
+---
+
+### 10.6 Worker & Cluster Endpoints (`/api/v1/workers`, `/api/v1/cluster`)
+
+| Method | Path | Required Role | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/workers` | `VIEWER`, `OPERATOR`, `ADMIN` | List registered worker nodes, states (`ACTIVE`, `SUSPECTED`), capacity, and last heartbeats. |
+| `GET` | `/api/v1/workers/{workerId}` | `VIEWER`, `OPERATOR`, `ADMIN` | Inspect individual worker details and runtime statistics. |
+| `GET` | `/api/v1/cluster` | `VIEWER`, `OPERATOR`, `ADMIN` | Cluster overview including leader status, epoch, worker counts, and total capacity. |
+
+---
+
+### 10.7 Dead-Letter Queue Endpoints (`/api/v1/dlq`)
+
+| Method | Path | Required Role | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/dlq` | `VIEWER`, `OPERATOR`, `ADMIN` | Paginated listing of tasks in Dead-Letter Queue. |
+| `GET` | `/api/v1/dlq/{taskId}` | `VIEWER`, `OPERATOR`, `ADMIN` | Deep inspection of DLQ task, execution attempt failures, and audit trail. |
+| `POST` | `/api/v1/dlq/{taskId}/replay` | `OPERATOR`, `ADMIN` | Replay DLQ task back to `QUEUED` and unblock downstream workflow dependencies if applicable. |
+| `POST` | `/api/v1/dlq/{taskId}/archive` | `OPERATOR`, `ADMIN` | Durably archive DLQ task with audit trail and outbox event without physical deletion. |
+
+---
+
+### 10.8 Tenant Policy Endpoints (`/api/v1/tenants`)
+
+| Method | Path | Required Role | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/tenants/{tenantId}/policy` | `VIEWER`, `OPERATOR`, `ADMIN` | Retrieve tenant rate limits, max concurrency, and queue quotas. |
+| `PUT` | `/api/v1/tenants/{tenantId}/policy` | `ADMIN` | Update tenant execution policy parameters. |
+
+#### `PUT /api/v1/tenants/{tenantId}/policy` Request Body
+```json
+{
+  "maxConcurrentTasks": 100,
+  "maxQueuedTasks": 5000,
+  "tasksPerSecond": 50.0,
+  "burstCapacity": 100,
+  "maxWorkflowExecutions": 20
+}
+```
+
+---
+
+### 10.9 Dev Authentication Helper (`/api/v1/auth/token`)
+
+| Method | Path | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/auth/token` | Generates a signed development/testing JWT token with specified subject, roles, and tenant ID. |
+

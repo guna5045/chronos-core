@@ -246,4 +246,18 @@ public class DlqService {
         Objects.requireNonNull(tenantId, "tenantId must not be null");
         return taskRepository.findByTenantAndStatus(tenantId, TaskStatus.DLQ, limit);
     }
+
+    /**
+     * Lists tasks in DLQ with pagination and optional tenant filtering.
+     */
+    public List<Task> listDlqTasks(String tenantId, int limit, int offset) {
+        return taskRepository.findTasksWithFilter(tenantId, TaskStatus.DLQ, null, null, limit, offset);
+    }
+
+    /**
+     * Returns total count of tasks in DLQ with optional tenant filtering.
+     */
+    public int countDlqTasks(String tenantId) {
+        return taskRepository.countTasksWithFilter(tenantId, TaskStatus.DLQ, null, null);
+    }
 }

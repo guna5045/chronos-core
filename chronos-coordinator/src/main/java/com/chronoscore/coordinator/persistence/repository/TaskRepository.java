@@ -151,5 +151,19 @@ public interface TaskRepository {
     default int countActiveByConcurrencyKey(String tenantId, String concurrencyKey) {
         return 0;
     }
+
+    /**
+     * Searches tasks applying multi-attribute filtering and pagination.
+     */
+    default List<Task> findTasksWithFilter(String tenantId, TaskStatus status, String taskType, com.chronoscore.common.enums.TaskPriority priority, int limit, int offset) {
+        return java.util.Collections.emptyList();
+    }
+
+    /**
+     * Counts tasks matching multi-attribute filter.
+     */
+    default int countTasksWithFilter(String tenantId, TaskStatus status, String taskType, com.chronoscore.common.enums.TaskPriority priority) {
+        return 0;
+    }
 }
 

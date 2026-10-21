@@ -117,6 +117,21 @@
 | **Dead-Letter Task Archival / Discard** | Operator discards irrecoverable task in DLQ. | `DlqService.archiveTask` releases lease and appends durable audit record `ARCHIVED: <reason>` and outbox event `TaskArchived`. | Historical execution attempts and audit log preserved for compliance without active retry eligibility. |
 | **Concurrent Duplicate Task Submission Race** | Two clients submit identical task with same `(tenantId, idempotencyKey)` simultaneously. | PostgreSQL unique constraint `uq_chronos_tasks_tenant_idempotency` raises exception on loser; `TransactionalTaskService` catches it and returns existing task. | Exactly one task row created; zero duplicate executions. |
 
+---
+
+## 9. REST API Gateway & Security Failure Modes (Active in Phase 10)
+
+| Failure Scenario | Gateway Impact | Detection & Mitigation | Resulting State |
+| :--- | :--- | :--- | :--- |
+| **Unauthenticated Request** | Client requests protected endpoint without `Authorization: Bearer` or token is expired/tampered. | Spring Security `BearerTokenAuthenticationFilter` / `JwtDecoder` fails validation; custom `AuthenticationEntryPoint` returns standard JSON error. | Request rejected with `401 Unauthorized` (`UNAUTHORIZED`). Endpoint handler is never invoked. |
+| **Insufficient RBAC Role** | User with `ROLE_VIEWER` attempts mutating action (`POST /api/v1/tasks/{id}/cancel` or `POST /api/v1/dlq/{id}/replay`). | Spring Security HTTP security rule / method security rejects caller with `AccessDeniedException`. | Request rejected with `403 Forbidden` (`FORBIDDEN`). No domain mutation executed. |
+| **Cross-Tenant IDOR Tampering** | Tenant A user queries or mutates Tenant B resource (e.g. `GET /api/v1/tasks/{tenantBTaskId}`). | `TenantSecurityContext.assertCanAccessTenant(task.getTenantId())` detects mismatch between principal `tenant_id` claim and entity tenant. | Request rejected with `403 Forbidden` (`FORBIDDEN`). Tenant B data is never exposed. |
+| **Invalid Workflow DAG Submission** | Client posts workflow version with cyclic graph, self-loop, or orphaned edge references. | `WorkflowDagValidator.validate` detects cycle via DFS 3-coloring or orphaned dependency. Throws `WorkflowValidationException`. | Translated by `GlobalExceptionHandler` to `400 Bad Request` with `INVALID_DAG`. Unparseable DAG is never persisted. |
+| **Published Workflow Version Mutation** | Operator attempts to modify node or edge definition on an already published version. | `WorkflowService` verifies immutability of `PUBLISHED` version state. Throws `IllegalStateException`. | Translated to `409 Conflict` (`STATE_CONFLICT`). Immutability contract strictly preserved. |
+| **Tenant Rate Limit Exhaustion via REST** | Tenant exceeds allowed submission or scheduling rate quota. | `TaskAdmissionController` / `TenantRateLimiter` rejects request with `TenantRateLimitExceededException`. | Translated to `429 Too Many Requests` (`RATE_LIMITED`). Ingestion throttled gracefully. |
+| **Malformed Payload / Size Limit Exceeded** | Client submits invalid UUID, missing required fields, or oversized request body. | Jakarta `@Valid` annotation and Spring message converter validation detect violations. | Translated to `400 Bad Request` (`VALIDATION_ERROR`) with structured `fieldErrors` map. |
+
+
 
 
 

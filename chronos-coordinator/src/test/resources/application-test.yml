@@ -43,5 +43,10 @@ chronos:
     max-delay: 60s
     multiplier: 2.0
     jitter: false
+  security:
+    enabled: true
+    jwt-secret: chronos-core-distributed-orchestration-dev-secret-key-32bytes-minimum
+    issuer: chronos-core
+    token-validity-seconds: 3600
 
 

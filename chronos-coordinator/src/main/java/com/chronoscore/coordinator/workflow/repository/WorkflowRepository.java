@@ -34,4 +34,16 @@ public interface WorkflowRepository {
     List<WorkflowNodeDefinition> findNodesByVersion(UUID versionId);
 
     List<WorkflowEdge> findEdgesByVersion(UUID versionId);
+
+    default List<WorkflowDefinition> findAllWorkflows(int limit, int offset) {
+        return java.util.Collections.emptyList();
+    }
+
+    default int countWorkflows() {
+        return 0;
+    }
+
+    default List<WorkflowVersion> findVersionsByWorkflowId(UUID workflowId) {
+        return java.util.Collections.emptyList();
+    }
 }

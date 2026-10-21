@@ -293,6 +293,61 @@ public class JdbcTaskRepository implements TaskRepository {
                 .addValue("version", task.getVersion());
     }
 
+    @Override
+    public List<Task> findTasksWithFilter(String tenantId, TaskStatus status, String taskType, TaskPriority priority, int limit, int offset) {
+        StringBuilder sql = new StringBuilder("SELECT " + SELECT_COLUMNS + " FROM chronos_tasks WHERE 1=1 ");
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        if (tenantId != null && !tenantId.isBlank()) {
+            sql.append("AND tenant_id = :tenantId ");
+            params.addValue("tenantId", tenantId);
+        }
+        if (status != null) {
+            sql.append("AND status = :status ");
+            params.addValue("status", status.name());
+        }
+        if (taskType != null && !taskType.isBlank()) {
+            sql.append("AND task_type = :taskType ");
+            params.addValue("taskType", taskType);
+        }
+        if (priority != null) {
+            sql.append("AND priority = :priority ");
+            params.addValue("priority", priority.name());
+        }
+
+        sql.append("ORDER BY created_at DESC LIMIT :limit OFFSET :offset");
+        params.addValue("limit", Math.max(1, limit));
+        params.addValue("offset", Math.max(0, offset));
+
+        return jdbcTemplate.query(sql.toString(), params, taskRowMapper);
+    }
+
+    @Override
+    public int countTasksWithFilter(String tenantId, TaskStatus status, String taskType, TaskPriority priority) {
+        StringBuilder sql = new StringBuilder("SELECT COUNT(*) FROM chronos_tasks WHERE 1=1 ");
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        if (tenantId != null && !tenantId.isBlank()) {
+            sql.append("AND tenant_id = :tenantId ");
+            params.addValue("tenantId", tenantId);
+        }
+        if (status != null) {
+            sql.append("AND status = :status ");
+            params.addValue("status", status.name());
+        }
+        if (taskType != null && !taskType.isBlank()) {
+            sql.append("AND task_type = :taskType ");
+            params.addValue("taskType", taskType);
+        }
+        if (priority != null) {
+            sql.append("AND priority = :priority ");
+            params.addValue("priority", priority.name());
+        }
+
+        Integer count = jdbcTemplate.queryForObject(sql.toString(), params, Integer.class);
+        return count != null ? count : 0;
+    }
+
     private static Timestamp toTimestamp(Instant instant) {
         return instant != null ? Timestamp.from(instant) : null;
     }

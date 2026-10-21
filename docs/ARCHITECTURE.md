@@ -1,8 +1,8 @@
 # Chronos Core - Architectural Specification
 
 ## Status
-- **Current Phase**: Phase 08 (Workflow & DAG Orchestration)
-- **Document Version**: 0.8.0
+- **Current Phase**: Phase 10 (REST API & Security Layer)
+- **Document Version**: 0.10.0
 
 ---
 
@@ -709,4 +709,50 @@ Phase 09 establishes multi-tenant isolation, admission controls, fairness, quota
 3. **`TenantConcurrencyManager`**: Atomic Redis Set Lua check-and-add (`chronos:tenant:{tenantId}:running`), fail-closed PostgreSQL fallback, leak-free release on all completion/timeout/cancellation paths, and durable failover reconciliation (`reconcileWithDurableState`).
 4. **`SchedulingPolicy` & Tenant Fairness**: Interleaved round-robin candidate selection across per-tenant queues balanced with priority-aging anti-starvation mechanisms.
 5. **Logical Concurrency Keys (`concurrencyKey`)**: Per-task logical serialization keys with distributed lease-aware locks.
-6. **Hardened DLQ Management**: Inspection (`inspectTask`), durable archival marker (`archiveTask`), and safe replay (`replayTask`) that re-activates downstream workflow nodes without creating duplicate executions.
+7. **Hardened DLQ Management**: Inspection (`inspectTask`), durable archival marker (`archiveTask`), and safe replay (`replayTask`) that re-activates downstream workflow nodes without creating duplicate executions.
+
+---
+
+## 12. REST API & Security Architecture (Phase 10)
+
+Phase 10 exposes Chronos Core capabilities through a versioned, validated, and secured REST API layer without duplicating domain, scheduling, or recovery logic.
+
+```text
+                    CLIENT
+                       │
+                       ▼
+             ┌──────────────────┐
+             │ REST API /v1     │
+             │ Spring Security  │
+             └────────┬─────────┘
+                      │
+             ┌────────┴─────────┐
+             │ Authentication   │
+             │ Authorization    │
+             │ Tenant Context   │
+             │ Validation       │
+             └────────┬─────────┘
+                      │
+                      ▼
+             Application Services
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+        Tasks      Workflows     DLQ
+          │           │           │
+          └───────────┼───────────┘
+                      ▼
+              Existing Chronos Core
+```
+
+### 12.1 Key Design Principles
+1. **Delegation, Not Duplication**: REST controllers strictly orchestrate HTTP inputs and delegate business operations directly to existing services (`TaskSubmissionService`, `TransactionalTaskService`, `WorkflowService`, `WorkflowExecutionService`, `DlqService`, `WorkerRegistry`, `TenantPolicyService`).
+2. **Stateless Security**: Spring Security configured with `SessionCreationPolicy.STATELESS` and OAuth2 Resource Server validating HMAC-SHA256 / RSA signed JSON Web Tokens (JWT).
+3. **Role-Based Access Control (RBAC)**:
+   - `ROLE_VIEWER`: Read-only visibility across tasks, workflows, workers, cluster, DLQ, and policies.
+   - `ROLE_OPERATOR`: Operational mutations including task submission, retry, cancellation, workflow execution, DLQ replay, and archival.
+   - `ROLE_ADMIN`: Platform governance including workflow version drafting, publishing, deprecation, and tenant execution policy updates.
+4. **Tenant Isolation & IDOR Protection**: Server-side tenant assertion (`TenantSecurityContext.assertCanAccessTenant`) ensures a tenant token cannot view or mutate another tenant's tasks, workflow executions, DLQ entries, or policies.
+5. **REST Idempotency**: Support for `Idempotency-Key` HTTP header mapping directly to the underlying `(tenantId, idempotencyKey)` partial unique index in PostgreSQL.
+6. **Centralized Error Translation**: `GlobalExceptionHandler` converts domain exceptions into consistent `ApiErrorResponse` structures without leaking database or coordination internals.
+

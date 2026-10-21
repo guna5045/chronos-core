@@ -68,8 +68,23 @@ chronos:
     poll-interval: ${CHRONOS_RECOVERY_POLL_INTERVAL:1s}
     batch-size: ${CHRONOS_RECOVERY_BATCH_SIZE:50}
 
+  security:
+    enabled: ${CHRONOS_SECURITY_ENABLED:true}
+    jwt-secret: ${CHRONOS_JWT_SECRET:chronos-core-distributed-orchestration-dev-secret-key-32bytes-minimum}
+    issuer: ${CHRONOS_JWT_ISSUER:chronos-core}
+    token-validity-seconds: ${CHRONOS_JWT_VALIDITY:3600}
+
 server:
   port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
 
 logging:
   level:

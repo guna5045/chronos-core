@@ -1,7 +1,7 @@
 # Chronos Core - Developer Setup & Contribution Guide
 
 ## Status
-- **Current Phase**: Phase 08 (Workflow & DAG Orchestration)
+- **Current Phase**: Phase 10 (REST API & Security Layer)
 
 ---
 
@@ -308,7 +308,48 @@ mvn test -Dtest=DlqManagementHardeningTest -pl chronos-coordinator
 
 # Run Phase 09 Idempotency Hardening Tests (concurrent submissions, duplicate detection)
 mvn test -Dtest=IdempotencyHardeningTest -pl chronos-coordinator
+
+# Run Phase 10 Security Authentication Tests (401 unauthenticated, JWT expiry, signature tampering)
+mvn test -Dtest=SecurityAuthTest -pl chronos-coordinator
+
+# Run Phase 10 RBAC Authorization Tests (VIEWER, OPERATOR, ADMIN permission matrix)
+mvn test -Dtest=RbacAuthorizationTest -pl chronos-coordinator
+
+# Run Phase 10 Tenant Isolation & IDOR Protection Tests (cross-tenant access rejection)
+mvn test -Dtest=TenantIsolationIdorTest -pl chronos-coordinator
+
+# Run Phase 10 Task Controller REST Tests (submission, idempotency, retry, cancel, pagination)
+mvn test -Dtest=TaskControllerRestTest -pl chronos-coordinator
+
+# Run Phase 10 Workflow Controller REST Tests (creation, DAG validation, publishing, execution)
+mvn test -Dtest=WorkflowControllerRestTest -pl chronos-coordinator
+
+# Run Phase 10 Worker & Cluster Controller REST Tests (worker listing, details, cluster stats)
+mvn test -Dtest=WorkerAndClusterControllerRestTest -pl chronos-coordinator
+
+# Run Phase 10 DLQ Controller REST Tests (inspect, replay, archive)
+mvn test -Dtest=DlqControllerRestTest -pl chronos-coordinator
+
+# Run Phase 10 Tenant Policy Controller REST Tests (read, update, validation)
+mvn test -Dtest=TenantPolicyControllerRestTest -pl chronos-coordinator
 ```
+
+---
+
+## 7.1 Local Development Authentication (Phase 10)
+
+For local REST API interaction:
+1. Generate an authenticated JWT token:
+   ```bash
+   curl -X POST http://localhost:8080/api/v1/auth/token \
+     -H "Content-Type: application/json" \
+     -d '{"subject":"admin-user","roles":["ADMIN"],"tenantId":"tenant-alpha"}'
+   ```
+2. Pass the token in the `Authorization` header:
+   ```bash
+   curl -X GET http://localhost:8080/api/v1/tasks \
+     -H "Authorization: Bearer <TOKEN>"
+   ```
 
 ---
 
