@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chronos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${CHRONOS_DB_NAME:-chronos_core}
+      POSTGRES_USER: ${CHRONOS_DB_USERNAME:-chronos_user}
+      POSTGRES_PASSWORD: ${CHRONOS_DB_PASSWORD:-chronos_dev_pass}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${CHRONOS_DB_PORT:-5432}:5432"
+    volumes:
+      - chronos_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHRONOS_DB_USERNAME:-chronos_user} -d ${CHRONOS_DB_NAME:-chronos_core}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - chronos-network
+
+volumes:
+  chronos_pgdata:
+    name: chronos_pgdata
+
+networks:
+  chronos-network:
+    name: chronos-network
+    driver: bridge

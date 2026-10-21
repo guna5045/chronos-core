@@ -18,7 +18,20 @@
 
 ---
 
-## 2. Distributed System Failure Modes (Planned - Future Phases)
+## 2. Persistence & Database Failure Modes (Active in Phase 03)
+
+| Failure Scenario | Persistence Impact | Detection & Mitigation | Resulting State |
+| :--- | :--- | :--- | :--- |
+| **Concurrent Version Stale Write** | Two workers/transactions attempt to update the same task concurrently from the same version. | Repository executes `UPDATE ... WHERE task_id = ? AND version = ?`. Second update updates 0 rows and throws `OptimisticLockingException`. | First update succeeds; second update fails and caller must re-read newer state. Lost updates prevented. |
+| **Mid-Transaction Failure** | Unhandled exception or storage error occurs after task mutation but before transaction commit (e.g., audit log error or outbox write failure). | Spring `@Transactional` transaction boundary detects error and triggers full PostgreSQL `ROLLBACK`. | Complete rollback: task update, audit log, and outbox event are discarded together. No partial state commits. |
+| **Duplicate Idempotency Key** | Client retries submission with the same `(tenant_id, idempotency_key)`. | PostgreSQL enforces partial unique index `uq_chronos_tasks_tenant_idempotency`. Unique violation is caught and translated to `DuplicateTaskException`. | Duplicate task rejected; original task preserved. |
+| **Database Unavailable / Outage** | PostgreSQL is unreachable or connection pool exhausted. | HikariCP pool fails with connection acquisition timeout; operations fail fast with `PersistenceException`. | Transaction aborted; system refuses state mutations until durable database is reachable. |
+| **Database Constraint Violation** | Invalid domain values bypass validation (e.g. `max_attempts <= 0`, negative attempts). | PostgreSQL check constraints (`chk_tasks_max_attempts`, `chk_tasks_current_attempt`, `chk_tasks_version`) reject invalid data. | Query aborted; transaction rolled back. |
+| **Flyway Migration Failure** | Schema script syntax error or lock conflict during startup. | Flyway detects migration failure, prevents application startup, and records failed migration status. | Coordinator startup halted until migration issue is remediated. |
+
+---
+
+## 3. Distributed System Failure Modes (Planned - Future Phases)
 
 The following distributed failure modes represent the planned operational resiliency architecture:
 
