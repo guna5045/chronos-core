@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import {
   Activity,
+  Bot,
   CheckCircle2,
   Cpu,
   GitBranch,
@@ -11,6 +12,7 @@ import {
   LogOut,
   Plus,
   Shield,
+  ShieldAlert,
   Sliders,
   Terminal,
 } from 'lucide-react';
@@ -38,6 +40,11 @@ export const AppShell: React.FC = () => {
       to: `/tenants/${user?.tenantId || 'tenant-alpha'}/policy`,
       icon: <Sliders size={18} />,
     },
+  ];
+
+  const aiNavItems = [
+    { label: 'AI Workflows', to: '/ai/workflows', icon: <Bot size={18} /> },
+    { label: 'AI Operations', to: '/ai/operations', icon: <ShieldAlert size={18} /> },
   ];
 
   return (
@@ -202,6 +209,42 @@ export const AppShell: React.FC = () => {
               Orchestration
             </span>
             {navItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                style={({ isActive }) => ({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.55rem 0.75rem',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  color: isActive ? '#ffffff' : 'var(--text-muted)',
+                  backgroundColor: isActive ? 'var(--bg-active)' : 'transparent',
+                  border: isActive ? '1px solid var(--border-default)' : '1px solid transparent',
+                  textDecoration: 'none',
+                  transition: 'all 0.15s ease',
+                })}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+
+            <span
+              style={{
+                fontSize: '0.65rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                fontWeight: 600,
+                color: 'var(--text-faint)',
+                padding: '0.85rem 0.75rem 0.5rem',
+              }}
+            >
+              AI Assistants
+            </span>
+            {aiNavItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

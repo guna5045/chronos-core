@@ -154,10 +154,41 @@ Accessible at: `http://localhost:5173`.
 ```bash
 npm test
 ```
-Runs 19 behavioral unit/integration tests with Vitest and `@testing-library/react`.
+Runs 22 behavioral unit/integration tests with Vitest and `@testing-library/react`.
 
 ### Production Build
 ```bash
 npm run build
 ```
 Executes `tsc -b` and builds minified Rollup chunks into `dist/`.
+
+---
+
+## 8. AI Workflow & Operations Control Plane Views (Phase 12)
+
+Phase 12 integrates dedicated, task-oriented AI assistant consoles into the control plane under `/ai/workflows` and `/ai/operations`. These interfaces are designed as structured engineering tools rather than open-ended chat interfaces.
+
+### 8.1 AI Workflow Agent (`/ai/workflows`)
+- **Natural Language Input**: Textarea for describing multi-step pipelines with prompt length meter (capped at 4,000 characters to prevent prompt injection abuse) and quick template buttons (e.g. *Image Pipeline*, *ETL Pipeline*, *ML Model Inference*).
+- **DAG Synthesis & Kahn Topological Preview**:
+  - Reuses the SVG `DagVisualizer` to render proposed nodes, dependency edges, and topological ranks.
+  - Displays deterministic validation badge (`VALID DAG` / `INVALID`) verified by Chronos Core's acyclicity checker.
+  - Node specifications table listing node IDs, task types, max attempt bounds, and execution timeouts.
+- **Human-In-The-Loop Approval Gate**:
+  - `Approve & Materialize Workflow`: Opens a confirmation modal. When confirmed by an `OPERATOR` or `ADMIN`, creates a new workflow definition with Draft Version 1 in the workflow registry.
+  - `Reject Proposal`: Marks proposal as discarded.
+  - Disabled for `VIEWER` users with explicit role requirement tooltips.
+
+### 8.2 AI Operations Agent (`/ai/operations`)
+- **Telemetry Correlation & Incident Triage Console**:
+  - Scoped diagnosis trigger: Allows scoping analysis to `CLUSTER`, `WORKER`, `TASK`, or `DLQ` with target identifier input.
+  - Diagnostic summary with deterministic severity badge (`INFO`, `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`).
+  - Likely root causes list derived from correlated telemetry patterns.
+- **Verified Telemetry Evidence Table**:
+  - Shows concrete observed system evidence (e.g. worker heartbeat failures, task timeout counts, DLQ poison pill classifications).
+  - Deep links directly to corresponding resource views (`/workers/:id`, `/tasks/:id`, `/dlq`).
+- **Controlled Operational Recommendations**:
+  - Action cards displaying action type (`RETRY_TASK`, `CANCEL_TASK`, `REPLAY_DLQ`, `ARCHIVE_DLQ`, `CANCEL_WORKFLOW`, `DRAIN_WORKER`), risk level (`LOW`, `MEDIUM`, `HIGH`), expiration deadline, and rationale.
+  - Human approval gate requiring an operational reason logged to audit trail.
+  - **Stale State Protection**: If the target state has evolved (e.g. task already succeeded before approval), the UI displays a clear conflict warning preventing duplicate or invalid execution.
+

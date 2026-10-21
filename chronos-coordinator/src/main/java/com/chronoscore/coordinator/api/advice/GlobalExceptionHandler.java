@@ -154,6 +154,28 @@ public class GlobalExceptionHandler {
                 .body(ApiErrorResponse.of(statusCode, ex.getStatusCode().toString(), code, reason, request.getRequestURI()));
     }
 
+    @ExceptionHandler(com.chronoscore.ai.policy.StaleActionStateException.class)
+    public ResponseEntity<ApiErrorResponse> handleStaleActionState(com.chronoscore.ai.policy.StaleActionStateException ex, HttpServletRequest request) {
+        log.warn("Stale AI action state on {}: {}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiErrorResponse.of(HttpStatus.CONFLICT.value(), "Conflict", "STALE_ACTION_STATE", ex.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(com.chronoscore.ai.policy.AiActionExpiredException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiActionExpired(com.chronoscore.ai.policy.AiActionExpiredException ex, HttpServletRequest request) {
+        log.warn("Expired AI action on {}: {}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.GONE)
+                .body(ApiErrorResponse.of(HttpStatus.GONE.value(), "Gone", "AI_ACTION_EXPIRED", ex.getMessage(), request.getRequestURI()));
+    }
+
+    @ExceptionHandler(com.chronoscore.ai.provider.AiProviderException.class)
+    public ResponseEntity<ApiErrorResponse> handleAiProviderException(com.chronoscore.ai.provider.AiProviderException ex, HttpServletRequest request) {
+        log.warn("AI Provider failure on {}: {}", request.getRequestURI(), ex.getMessage());
+        int status = (ex.getStatusCode() >= 400 && ex.getStatusCode() < 600) ? ex.getStatusCode() : HttpStatus.BAD_GATEWAY.value();
+        return ResponseEntity.status(status)
+                .body(ApiErrorResponse.of(status, "AI Provider Error", "AI_PROVIDER_ERROR", ex.getMessage(), request.getRequestURI()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGenericException(Exception ex, HttpServletRequest request) {
         log.error("Unhandled internal server error on {}: {}", request.getRequestURI(), ex.getMessage(), ex);

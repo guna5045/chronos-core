@@ -70,7 +70,7 @@ chronos-core/
 
 ## 6. Development Status
 
-> **Current Status**: **Phase 11: Production Control Plane** Completed
+> **Current Status**: **Phase 12: AI Workflow & Operations Agents** Completed
 
 - [x] **Phase 01: Project Foundation & Repository Setup**
 - [x] **Phase 02: Core Domain Model & Shared Contracts**
@@ -83,6 +83,7 @@ chronos-core/
 - [x] **Phase 09: Advanced Platform Capabilities**
 - [x] **Phase 10: REST API & Security Layer**
 - [x] **Phase 11: Production Control Plane (React Dashboard)**
+- [x] **Phase 12: AI Workflow & Operations Agents**
 
 ---
 
@@ -99,7 +100,7 @@ chronos-core/
 9. **Phase 09: Advanced Platform Capabilities** *(Completed)*
 10. **Phase 10: REST API & Security Layer** *(Completed)*
 11. **Phase 11: Production Control Plane (React Dashboard)** *(Completed)*
-12. **Phase 12: AI Workflow & Operations Agents**
+12. **Phase 12: AI Workflow & Operations Agents** *(Completed)*
 13. **Phase 13: Observability, Metrics & Production Hardening**
 14. **Phase 14: Distributed Chaos Testing & k6 Benchmarks**
 

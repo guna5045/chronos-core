@@ -12,7 +12,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Responsible for cluster leadership coordination, task state machine transitions,
  * and DAG execution in subsequent phases.
  */
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.chronoscore.coordinator", "com.chronoscore.ai"})
 public class ChronosCoordinatorApplication {
 
     private static final Logger log = LoggerFactory.getLogger(ChronosCoordinatorApplication.class);

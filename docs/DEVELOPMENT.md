@@ -409,6 +409,60 @@ For rapid local testing against the backend dev token helper (`POST /api/v1/auth
 - **Viewer**: Subject `viewer-user`, Tenant `tenant-alpha`, Roles `[VIEWER]`
 Alternatively, any valid custom Bearer JWT token can be pasted directly into the input field.
 
+---
+
+## 10. AI Subsystem Development & Testing (Phase 12)
+
+The `chronos-ai` module provides specialized AI Workflow and AI Operations capabilities.
+
+### 10.1 Environment Configuration
+Configuration is managed through environment variables or `application.yml`:
+
+```properties
+# Enable/disable AI subsystem (if false, core distributed orchestration runs normally)
+CHRONOS_AI_ENABLED=true
+
+# AI Provider: STUB (deterministic offline) or OPENAI_COMPATIBLE (live LLM)
+CHRONOS_AI_PROVIDER=OPENAI_COMPATIBLE
+
+# Base URL for OpenAI-compatible endpoint (OpenAI, Azure OpenAI, Ollama, vLLM, LocalAI)
+CHRONOS_AI_BASE_URL=https://api.openai.com/v1
+
+# Server-side API key (never exposed to frontend or logged)
+CHRONOS_AI_API_KEY=sk-...
+
+# Configured model
+CHRONOS_AI_MODEL=gpt-4o-mini
+
+# Timeouts and bounds
+CHRONOS_AI_TIMEOUT_SECONDS=30
+CHRONOS_AI_ACTION_TTL_MINUTES=30
+CHRONOS_AI_MAX_PROMPT_LENGTH=4000
+```
+
+### 10.2 Testing with Deterministic Stub Provider (Offline)
+For automated testing and CI/CD without an external LLM subscription or API key:
+- The default test profile uses `StubAiProvider`.
+- It deterministically produces valid and cyclic workflow DAG proposals, simulated telemetry diagnoses, and predictable failure responses (timeout, malformed output).
+
+To run AI unit and integration tests:
+```bash
+# Run chronos-ai unit tests (20 tests)
+mvn test -pl chronos-ai
+
+# Run coordinator AI REST & security tests (AiControllerRestTest)
+mvn test -pl chronos-coordinator -Dtest=AiControllerRestTest
+```
+
+### 10.3 Testing AI Features in Control Plane
+1. Launch the coordinator backend with AI enabled (`CHRONOS_AI_PROVIDER=STUB` or live API key).
+2. Launch `chronos-dashboard` with `npm run dev`.
+3. Log in as `operator-user` (or `admin-user`).
+4. Navigate to `/ai/workflows` to generate and inspect workflow proposals with the SVG DAG visualizer.
+5. Click **Approve & Materialize Workflow** to verify draft creation in the workflow registry.
+6. Navigate to `/ai/operations` to trigger cluster or worker incident diagnosis, review telemetry evidence, and approve controlled actions with stale-state verification.
+
+
 
 
 

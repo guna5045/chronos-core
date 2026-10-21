@@ -1,9 +1,9 @@
 # Chronos Core - API & Shared Contracts Specification
 
 ## Status
-- **Current Phase**: Phase 11 (Production Control Plane)
-- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, Fault Tolerance / Recovery Services, Workflow & DAG Services, Production REST API Gateway, and Engineering Control Plane (`chronos-dashboard`)
-- **REST API Status**: Active (`/api/v1`) with OAuth2/JWT Authentication, RBAC, Tenant Isolation, and React Control Plane integration
+- **Current Phase**: Phase 12 (AI Workflow & Operations Agents)
+- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, Fault Tolerance / Recovery Services, Workflow & DAG Services, Production REST API Gateway, Engineering Control Plane (`chronos-dashboard`), and AI Workflow & Operations Service Layer
+- **REST API Status**: Active (`/api/v1`) with OAuth2/JWT Authentication, RBAC, Tenant Isolation, React Control Plane integration, and AI Assisted Orchestration
 
 ---
 
@@ -450,4 +450,104 @@ Query parameters: `page` (default: 0), `size` (default: 20, maximum: 100).
 | Method | Path | Description |
 | :--- | :--- | :--- |
 | `POST` | `/api/v1/auth/token` | Generates a signed development/testing JWT token with specified subject, roles, and tenant ID. |
+
+---
+
+### 10.10 AI Workflow & Operations Endpoints (`/api/v1/ai/*`)
+
+| Method | Path | Required Role | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/v1/ai/status` | Any / Authenticated | Returns AI subsystem status (enabled/disabled, provider, model, availability). Credentials and API keys are NEVER exposed. |
+| `POST` | `/api/v1/ai/workflows/generate` | `OPERATOR`, `ADMIN` | Translates natural language requirements into a structured, Kahn-validated workflow DAG proposal. |
+| `GET` | `/api/v1/ai/workflows` | `VIEWER`, `OPERATOR`, `ADMIN` | Lists historical workflow proposals scoped to authenticated tenant. |
+| `GET` | `/api/v1/ai/workflows/{proposalId}` | `VIEWER`, `OPERATOR`, `ADMIN` | Retrieves specific workflow proposal, validation errors, and explanation. |
+| `POST` | `/api/v1/ai/workflows/{proposalId}/approve` | `OPERATOR`, `ADMIN` | Approves valid proposal, materializing a new Draft Version 1 in `WorkflowService`. Rejects cross-tenant access and cyclic DAGs. |
+| `POST` | `/api/v1/ai/workflows/{proposalId}/reject` | `OPERATOR`, `ADMIN` | Discards proposal and marks status as `REJECTED`. |
+| `POST` | `/api/v1/ai/incidents/analyze` | `VIEWER`, `OPERATOR`, `ADMIN` | Gathers live telemetry evidence, computes severity, root causes, and recommends controlled actions. |
+| `GET` | `/api/v1/ai/actions` | `VIEWER`, `OPERATOR`, `ADMIN` | Lists registered operational recommendation actions. |
+| `GET` | `/api/v1/ai/actions/{actionId}` | `VIEWER`, `OPERATOR`, `ADMIN` | Inspects specific operational recommendation details and expiration time. |
+| `POST` | `/api/v1/ai/actions/{actionId}/approve` | `OPERATOR`, `ADMIN` | Re-verifies live target state (stale action protection), asserts tenant boundaries, enforces RBAC, and executes mutation via application services. |
+| `POST` | `/api/v1/ai/actions/{actionId}/reject` | `OPERATOR`, `ADMIN` | Discards recommendation and marks status as `REJECTED`. |
+
+#### Example: `POST /api/v1/ai/workflows/generate`
+```json
+{
+  "prompt": "Download an image, resize it, then run moderation and upload the result.",
+  "workflowName": "image-processing-pipeline"
+}
+```
+
+Response:
+```json
+{
+  "proposalId": "f781a91e-b830-47b2-9a84-0b1511da483e",
+  "tenantId": "tenant-alpha",
+  "workflowName": "image-processing-pipeline",
+  "description": "Image processing pipeline with moderation",
+  "nodes": [
+    { "nodeId": "download", "taskType": "DOWNLOAD", "maxAttempts": 3, "timeout": "PT5M" },
+    { "nodeId": "resize", "taskType": "RESIZE", "maxAttempts": 3, "timeout": "PT5M" },
+    { "nodeId": "moderate", "taskType": "MODERATION", "maxAttempts": 3, "timeout": "PT5M" },
+    { "nodeId": "upload", "taskType": "UPLOAD", "maxAttempts": 3, "timeout": "PT5M" }
+  ],
+  "edges": [
+    { "sourceNodeId": "download", "targetNodeId": "resize" },
+    { "sourceNodeId": "resize", "targetNodeId": "moderate" },
+    { "sourceNodeId": "moderate", "targetNodeId": "upload" }
+  ],
+  "explanation": "Sequential DAG: Resize depends on download; moderation depends on resize; upload depends on moderation.",
+  "valid": true,
+  "validationErrors": [],
+  "status": "PENDING_REVIEW",
+  "createdAt": "2026-10-22T00:55:00Z",
+  "expiresAt": "2026-10-22T01:25:00Z"
+}
+```
+
+#### Example: `POST /api/v1/ai/incidents/analyze`
+```json
+{
+  "scope": "CLUSTER",
+  "targetId": "cluster"
+}
+```
+
+Response:
+```json
+{
+  "analysisId": "48f10ea8-4cf5-4cf5-901a-853127818e5b",
+  "scope": "CLUSTER",
+  "targetId": "cluster",
+  "summary": "Elevated task retry rates detected across worker pool.",
+  "severity": "HIGH",
+  "evidence": [
+    {
+      "source": "worker",
+      "identifier": "worker-02",
+      "summary": "Worker missed heartbeats; transitioned to SUSPECTED",
+      "status": "SUSPECTED"
+    }
+  ],
+  "likelyCauses": [
+    "Worker node network partition or heavy GC pauses",
+    "Database connection pool saturation"
+  ],
+  "recommendations": [
+    {
+      "actionId": "73bc8617-578b-4bb2-bfe3-90d19b788a01",
+      "tenantId": "tenant-alpha",
+      "title": "Drain unresponsive worker",
+      "reason": "Prevent task allocation to suspected worker-02",
+      "risk": "MEDIUM",
+      "actionType": "DRAIN_WORKER",
+      "targetId": "worker-02",
+      "evidence": [],
+      "status": "PENDING_APPROVAL",
+      "createdAt": "2026-10-22T00:55:00Z",
+      "expiresAt": "2026-10-22T01:25:00Z"
+    }
+  ],
+  "analyzedAt": "2026-10-22T00:55:01Z"
+}
+```
 

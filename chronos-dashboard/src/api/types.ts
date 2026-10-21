@@ -262,3 +262,92 @@ export interface AuthTokenResponse {
   roles: string[];
   tenantId: string;
 }
+
+// AI Types
+export interface AiStatusResponse {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  available: boolean;
+}
+
+export type AiProposalStatus = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+
+export interface WorkflowNodeDefinition {
+  nodeId: string;
+  taskType: string;
+  payload?: string;
+  priority?: string;
+  timeout?: string | null;
+  maxAttempts?: number;
+}
+
+export interface AiWorkflowProposal {
+  proposalId: string;
+  tenantId: string;
+  workflowName: string;
+  description: string;
+  nodes: WorkflowNodeDefinition[];
+  edges: WorkflowEdge[];
+  explanation: string;
+  valid: boolean;
+  validationErrors: string[];
+  status: AiProposalStatus;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface GenerateWorkflowRequest {
+  prompt: string;
+  workflowName?: string;
+  tenantId?: string;
+}
+
+export type IncidentScope = 'CLUSTER' | 'WORKER' | 'TASK' | 'DLQ';
+export type AiIncidentSeverity = 'INFO' | 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type AiActionType = 'RETRY_TASK' | 'CANCEL_TASK' | 'REPLAY_DLQ' | 'ARCHIVE_DLQ' | 'CANCEL_WORKFLOW' | 'INSPECT_WORKER';
+export type AiActionRisk = 'LOW' | 'MEDIUM' | 'HIGH';
+export type AiActionStatus = 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'EXECUTED';
+
+export interface AiEvidenceRecord {
+  source: string;
+  identifier: string;
+  summary: string;
+  status: string;
+}
+
+export interface AiOperationalAction {
+  actionId: string;
+  tenantId: string;
+  title: string;
+  reason: string;
+  risk: AiActionRisk;
+  actionType: AiActionType;
+  targetId: string;
+  evidence: AiEvidenceRecord[];
+  status: AiActionStatus;
+  createdAt: string;
+  expiresAt: string;
+  executedAt?: string;
+  executedBy?: string;
+  executionResult?: string;
+}
+
+export interface IncidentAnalysisRequest {
+  scope: IncidentScope;
+  targetId?: string;
+  tenantId?: string;
+}
+
+export interface IncidentAnalysisResponse {
+  analysisId: string;
+  scope: IncidentScope;
+  targetId?: string;
+  summary: string;
+  severity: AiIncidentSeverity;
+  evidence: AiEvidenceRecord[];
+  likelyCauses: string[];
+  recommendations: AiOperationalAction[];
+  analyzedAt: string;
+}
+

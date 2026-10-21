@@ -18,6 +18,8 @@ import { WorkflowExecutionPage } from './pages/WorkflowExecutionPage';
 import { DlqPage } from './pages/DlqPage';
 import { ClusterPage } from './pages/ClusterPage';
 import { TenantPolicyPage } from './pages/TenantPolicyPage';
+import { AiWorkflowsPage } from './pages/AiWorkflowsPage';
+import { AiOperationsPage } from './pages/AiOperationsPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,6 +67,8 @@ export const App: React.FC = () => {
                 path="tenants"
                 element={<Navigate to="/tenants/tenant-alpha/policy" replace />}
               />
+              <Route path="ai/workflows" element={<AiWorkflowsPage />} />
+              <Route path="ai/operations" element={<AiOperationsPage />} />
             </Route>
 
             {/* Catch-all Fallback */}

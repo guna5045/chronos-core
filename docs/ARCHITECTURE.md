@@ -1,8 +1,8 @@
 # Chronos Core - Architectural Specification
 
 ## Status
-- **Current Phase**: Phase 11 (Production Control Plane)
-- **Document Version**: 0.11.0
+- **Current Phase**: Phase 12 (AI Workflow & Operations Agents)
+- **Document Version**: 0.12.0
 
 ---
 
@@ -803,5 +803,57 @@ Phase 11 implements the **Chronos Core Control Plane** (`chronos-dashboard`), an
 4. **Tenant Context Enforced**: The control plane displays the active tenant partition. Non-admin users operate strictly within their authenticated tenant boundaries; IDOR checks remain authoritatively enforced at the backend.
 5. **Deterministic Topological DAG Visualization**: Renders complex workflow Directed Acyclic Graphs via pure SVG using longest-path topological level assignment, Bézier curve connectors with directional arrows, and real-time node lifecycle status mapping (`PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`).
 6. **Optimized Server State & Cache Invalidation**: Powered by TanStack Query with structured query invalidation on mutations (e.g. task retries invalidate both `/tasks` and `/dlq`; workflow cancellations invalidate `/workflow-executions`).
+
+---
+
+## 14. AI Workflow & Operations Architecture (Phase 12)
+
+Phase 12 introduces two scoped AI capabilities: the **AI Workflow Agent** and the **AI Operations Agent**. The deterministic Chronos Core engine remains authoritatively in charge of all distributed systems semantics.
+
+```text
+                         USER
+                           │
+                           ▼
+                  CHRONOS CONTROL PLANE
+                           │
+                    REST /api/v1
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+             ▼                           ▼
+       Normal APIs                 AI APIs
+                                         │
+                              ┌──────────┴──────────┐
+                              ▼                     ▼
+                       Workflow Agent       Operations Agent
+                              │                     │
+                              └──────────┬──────────┘
+                                         ▼
+                                Tool / Policy Layer
+                                         │
+                                Approval / RBAC
+                                         │
+                                         ▼
+                              Existing Application
+                                   Services
+                                         │
+                    ┌────────────────────┼───────────────────┐
+                    ▼                    ▼                   ▼
+                 Scheduler            Workflow            Recovery
+                    │                    │                   │
+                    └────────────────────┼───────────────────┘
+                                         ▼
+                                  Chronos Core
+```
+
+### 14.1 Core Architectural Principles
+1. **Advisory & Workflow-Oriented**: The AI layer assists operators in authoring DAG workflows and triaging live cluster incidents. It never independently decides leader election, lease fencing, worker assignments, or state machine transitions.
+2. **Provider Abstraction**: Decoupled via `AiProvider` interface with `OpenAiCompatibleProvider` (for live models) and `StubAiProvider` (for deterministic, offline testing without external dependencies).
+3. **Deterministic Boundary**: AI-generated workflow proposals must pass the deterministic `WorkflowDagValidator` (Kahn's algorithm) before human presentation. Cycle detection is never left to the LLM.
+4. **Controlled Tool Registry & Read-Only Safety**: The AI interacts with system state via typed `AiTool` implementations. Initial tools are strictly read-only; mutating interventions are framed as proposals requiring human approval.
+5. **Human-In-The-Loop Approval Gates**: Mutating actions (`RETRY_TASK`, `CANCEL_TASK`, `REPLAY_DLQ`, `ARCHIVE_DLQ`, `CANCEL_WORKFLOW`, `DRAIN_WORKER`) require explicit operator authorization.
+6. **Stale State Protection**: Before executing an approved operational recommendation, live target state is re-fetched and re-validated. If state has transitioned (e.g. task already succeeded), the recommendation is rejected with HTTP 409 Conflict.
+7. **Prompt Injection Defense**: Operational data (logs, task payloads) is sanitized and structurally isolated from privileged instructions. Natural language inputs are strictly bounded (4,000 chars max).
+8. **Optional & Isolated**: If `CHRONOS_AI_ENABLED=false`, all core scheduling, execution, recovery, and persistence mechanisms operate at 100% functionality.
 
 

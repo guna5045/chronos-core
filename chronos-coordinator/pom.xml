@@ -23,6 +23,12 @@
             <artifactId>chronos-common</artifactId>
         </dependency>
 
+        <!-- Chronos AI Service Boundary -->
+        <dependency>
+            <groupId>com.chronoscore</groupId>
+            <artifactId>chronos-ai</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starter Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

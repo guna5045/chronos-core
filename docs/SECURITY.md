@@ -181,3 +181,51 @@ All security properties are externalized via environment variables:
 | `chronos.security.cors-allowed-origins` | `http://localhost:5173,http://localhost:3000` | `CHRONOS_SECURITY_CORS_ALLOWED_ORIGINS` |
 
 > **Security Rule**: Never commit production private keys or secret values into version control. In production environments, set `CHRONOS_SECURITY_JWT_SECRET` via secure external secret vaults (e.g., AWS Secrets Manager, HashiCorp Vault, Kubernetes Secrets).
+
+---
+
+## 8. AI Security Controls & Safety Guarantees (Phase 12)
+
+Phase 12 introduces AI Workflow and Operations capabilities governed by strict security boundaries. The LLM is strictly advisory and operates behind deterministic authorization gates.
+
+### 8.1 Role-Based Access Control for AI Features
+| Capability / Endpoint | Minimum Role | Enforced Rule |
+|---|---|---|
+| `GET /api/v1/ai/status` | Public / Authenticated | Only exposes engine status and configured model. Never reveals API keys or provider secrets. |
+| `POST /api/v1/ai/incidents/analyze` | `VIEWER` | Read-only analysis. Operates solely through read-only tools scoped to the user's tenant. |
+| `GET /api/v1/ai/workflows`, `GET /api/v1/ai/actions` | `VIEWER` | Read-only inspection of proposals and recommendations for the authenticated tenant. |
+| `POST /api/v1/ai/workflows/generate` | `OPERATOR` | Natural language proposal generation. Prompt bounded to 4,000 characters. |
+| `POST /api/v1/ai/workflows/{id}/approve` | `OPERATOR` | Approves DAG proposal and creates new draft version in `WorkflowService`. Requires deterministic DAG validation pass (`valid == true`). |
+| `POST /api/v1/ai/workflows/{id}/reject` | `OPERATOR` | Discards proposal and marks status as `REJECTED`. |
+| `POST /api/v1/ai/actions/{id}/approve` | `OPERATOR` | Approves operational recommendation. Enforces stale-state re-check before executing mutation. |
+| `POST /api/v1/ai/actions/{id}/reject` | `OPERATOR` | Discards operational recommendation. |
+| Cross-tenant AI analysis / approvals | `ADMIN` | Strictly restricted to `ROLE_ADMIN`; regular tenants cannot access other tenants' data. |
+
+### 8.2 Server-Side Tenant Isolation
+- **No Reliance on LLM Filtering**: The application server enforces tenant scoping directly in `AiToolRegistry` and `AiActionApprovalService`. Even if a user prompts the AI to "inspect worker data for tenant-beta", the backend asserts that `requestedTenantId.equals(authenticatedUserTenantId)`.
+- **IDOR Protection**: Attempting to approve or reject a workflow proposal or operational action belonging to another tenant returns `403 Forbidden` (`FORBIDDEN`).
+
+### 8.3 Stale Action State Protection
+- When an AI recommendation is generated (e.g. "Retry Task X"), the target entity's state at diagnosis time is recorded.
+- Before executing approval, the approval service re-fetches the live entity:
+  - If the task has already transitioned to `SUCCEEDED`, `RUNNING`, or `CANCELLED`, the execution is aborted immediately with `409 Conflict` (`STALE_ACTION_STATE`).
+  - Stale recommendations are never blindly executed against evolved system state.
+
+### 8.4 Action Bounded Lifetime (TTL Expiration)
+- Operational recommendations are assigned a strict expiration deadline (default 30 minutes).
+- Attempting to approve an expired action is rejected with `410 Gone` (`ACTION_EXPIRED`).
+
+### 8.5 Prompt Injection Defense
+- System prompts, tool schemas, and untrusted operational data are logically and structurally separated.
+- User-provided workflow descriptions are encapsulated within strict `<user_workflow_description>` boundaries and capped at 4,000 characters.
+- Operational payloads, error logs, and task inputs retrieved from persistence are treated strictly as untrusted data values and sanitized before injection into prompt templates.
+
+### 8.6 Absolute Operational Prohibitions
+The AI subsystem is strictly forbidden from:
+- Executing arbitrary SQL or communicating directly with PostgreSQL.
+- Executing arbitrary Redis commands.
+- Calling `Runtime.getRuntime().exec()` or spawning system processes.
+- Making unrestricted outbound HTTP requests (`httpRequest()` tools are prohibited).
+- Bypassing the `WorkflowDagValidator` (Kahn's algorithm) or `TaskStateMachine`.
+- Executing autonomous destructive operations without human approval.
+

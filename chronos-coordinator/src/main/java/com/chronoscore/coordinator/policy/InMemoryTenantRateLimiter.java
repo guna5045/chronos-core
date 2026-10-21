@@ -64,8 +64,8 @@ public class InMemoryTenantRateLimiter implements TenantRateLimiter {
             tokens = Math.min(capacity, tokens + (delta * refillRate));
             lastRefillTime = now;
 
-            if (tokens >= requested) {
-                tokens -= requested;
+            if (tokens >= requested - 1e-6) {
+                tokens = Math.max(0.0, tokens - requested);
                 return true;
             }
             return false;

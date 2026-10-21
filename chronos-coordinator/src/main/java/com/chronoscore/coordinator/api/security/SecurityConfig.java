@@ -96,6 +96,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/dlq/*/replay").hasAnyRole(ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
                         .requestMatchers(HttpMethod.POST, "/api/v1/dlq/*/archive").hasAnyRole(ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
 
+                        // AI operations
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ai/workflows/generate").hasAnyRole(ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ai/workflows/*/approve").hasAnyRole(ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ai/workflows/*/reject").hasAnyRole(ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ai/incidents/analyze").hasAnyRole(ChronosRoles.ROLE_VIEWER, ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ai/actions/*/approve").hasAnyRole(ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
+                        .requestMatchers(HttpMethod.POST, "/api/v1/ai/actions/*/reject").hasAnyRole(ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
+
                         // VIEWER + OPERATOR + ADMIN read operations
                         .requestMatchers(HttpMethod.GET, "/api/v1/**").hasAnyRole(ChronosRoles.ROLE_VIEWER, ChronosRoles.ROLE_OPERATOR, ChronosRoles.ROLE_ADMIN)
 

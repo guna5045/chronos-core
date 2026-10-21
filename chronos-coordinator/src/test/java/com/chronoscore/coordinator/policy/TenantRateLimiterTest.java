@@ -55,8 +55,8 @@ class TenantRateLimiterTest {
         assertThat(rateLimiter.tryAcquire(tenantId, rate, burst)).isTrue();
         assertThat(rateLimiter.tryAcquire(tenantId, rate, burst)).isFalse();
 
-        // Advance deterministic clock by 100ms (refills 2 tokens)
-        rateLimiter.advanceClock(Duration.ofMillis(100));
+        // Advance deterministic clock by 110ms (refills 2 tokens with burst cap of 2)
+        rateLimiter.advanceClock(Duration.ofMillis(110));
 
         assertThat(rateLimiter.tryAcquire(tenantId, rate, burst)).isTrue();
         assertThat(rateLimiter.tryAcquire(tenantId, rate, burst)).isTrue();
