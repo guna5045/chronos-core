@@ -1,7 +1,7 @@
 # Chronos Core - Developer Setup & Contribution Guide
 
 ## Status
-- **Current Phase**: Phase 10 (REST API & Security Layer)
+- **Current Phase**: Phase 11 (Production Control Plane)
 
 ---
 
@@ -365,18 +365,49 @@ For local REST API interaction:
 
 ---
 
-## 9. Frontend Build Instructions
+## 9. Frontend Control Plane (`chronos-dashboard`)
+
+The frontend is an engineering operations control plane built with React 19, TypeScript, Vite, Tailwind CSS, TanStack Query, and Lucide React.
+
+### 9.1 Local Development Server
+To launch the Vite development server with proxying to the Spring Boot REST API (`http://localhost:8080`):
 
 ```bash
 cd chronos-dashboard
 npm install
-npm run build
-```
-To run the local Vite development server:
-```bash
 npm run dev
 ```
-Accessible at: `http://localhost:5173`.
+The dashboard will be accessible at: `http://localhost:5173`.
+
+### 9.2 Running Frontend Test Suites
+The control plane includes behavior-driven unit and integration tests using Vitest and Testing Library:
+
+```bash
+cd chronos-dashboard
+npm test
+```
+
+### 9.3 Production Build & Verification
+To verify TypeScript compilation and generate the optimized production bundle:
+
+```bash
+cd chronos-dashboard
+npm run build
+```
+
+### 9.4 Environment Configuration
+Configuration is injected via Vite environment variables:
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `VITE_API_BASE_URL` | Base URL for REST API requests | `""` (proxied via Vite `/api`) |
+
+### 9.5 Local Authentication Profiles
+For rapid local testing against the backend dev token helper (`POST /api/v1/auth/token`), the login page provides three pre-configured credentials:
+- **Admin**: Subject `admin-user`, Tenant `tenant-alpha`, Roles `[ADMIN]`
+- **Operator**: Subject `operator-user`, Tenant `tenant-alpha`, Roles `[OPERATOR]`
+- **Viewer**: Subject `viewer-user`, Tenant `tenant-alpha`, Roles `[VIEWER]`
+Alternatively, any valid custom Bearer JWT token can be pasted directly into the input field.
 
 
 

@@ -1,9 +1,9 @@
 # Chronos Core - API & Shared Contracts Specification
 
 ## Status
-- **Current Phase**: Phase 10 (REST API & Security Layer)
-- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, Fault Tolerance / Recovery Services, Workflow & DAG Services, and Production REST API Gateway
-- **REST API Status**: Active (`/api/v1`) with OAuth2/JWT Authentication, RBAC, and Tenant Isolation
+- **Current Phase**: Phase 11 (Production Control Plane)
+- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, Scheduling Interfaces, Fault Tolerance / Recovery Services, Workflow & DAG Services, Production REST API Gateway, and Engineering Control Plane (`chronos-dashboard`)
+- **REST API Status**: Active (`/api/v1`) with OAuth2/JWT Authentication, RBAC, Tenant Isolation, and React Control Plane integration
 
 ---
 

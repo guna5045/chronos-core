@@ -1,8 +1,8 @@
 # Chronos Core - Architectural Specification
 
 ## Status
-- **Current Phase**: Phase 10 (REST API & Security Layer)
-- **Document Version**: 0.10.0
+- **Current Phase**: Phase 11 (Production Control Plane)
+- **Document Version**: 0.11.0
 
 ---
 
@@ -755,4 +755,53 @@ Phase 10 exposes Chronos Core capabilities through a versioned, validated, and s
 4. **Tenant Isolation & IDOR Protection**: Server-side tenant assertion (`TenantSecurityContext.assertCanAccessTenant`) ensures a tenant token cannot view or mutate another tenant's tasks, workflow executions, DLQ entries, or policies.
 5. **REST Idempotency**: Support for `Idempotency-Key` HTTP header mapping directly to the underlying `(tenantId, idempotencyKey)` partial unique index in PostgreSQL.
 6. **Centralized Error Translation**: `GlobalExceptionHandler` converts domain exceptions into consistent `ApiErrorResponse` structures without leaking database or coordination internals.
+
+---
+
+## 13. Production Control Plane Architecture (Phase 11)
+
+Phase 11 implements the **Chronos Core Control Plane** (`chronos-dashboard`), an engineering infrastructure operations interface for observing and controlling the distributed task orchestration system.
+
+```text
+                         USER
+                           │
+                           ▼
+              ┌────────────────────────┐
+              │   CHRONOS CONTROL      │
+              │        PLANE            │
+              │ React + TypeScript      │
+              │ TanStack Query          │
+              └────────────┬───────────┘
+                           │
+                     REST /api/v1
+                           │
+                           ▼
+              ┌────────────────────────┐
+              │ Spring Boot REST API   │
+              │ JWT + RBAC + Tenant    │
+              │ Validation + Errors    │
+              └────────────┬───────────┘
+                           │
+                           ▼
+                 CHRONOS CORE SERVICES
+                           │
+          ┌────────────────┼────────────────┐
+          ▼                ▼                ▼
+       Scheduler       Workflow          Recovery
+          │                │                │
+          └────────────────┼────────────────┘
+                           │
+                    ┌──────┴──────┐
+                    ▼             ▼
+                PostgreSQL      Redis
+```
+
+### 13.1 Key Architectural Principles
+1. **Authoritative Backend Boundary**: The frontend never directly queries PostgreSQL or Redis, never contacts workers over gRPC, and never replicates scheduling or DAG state transitions. All state changes flow strictly through the validated Spring Boot REST API (`/api/v1`).
+2. **Real Data Only**: No fake production metrics, no synthetic throughput numbers, and no decorative cards. Every metric, chart, and status badge reflects real backend API responses.
+3. **Stateless JWT & Role-Aware UI**: The frontend decodes standard JWT claims (`roles`, `tenantId`, `sub`) to conditionally display operational controls (task submission, retry, cancel, DLQ replay/archive, workflow execution, policy updates) according to the user's RBAC role (`VIEWER`, `OPERATOR`, `ADMIN`).
+4. **Tenant Context Enforced**: The control plane displays the active tenant partition. Non-admin users operate strictly within their authenticated tenant boundaries; IDOR checks remain authoritatively enforced at the backend.
+5. **Deterministic Topological DAG Visualization**: Renders complex workflow Directed Acyclic Graphs via pure SVG using longest-path topological level assignment, Bézier curve connectors with directional arrows, and real-time node lifecycle status mapping (`PENDING`, `RUNNING`, `SUCCEEDED`, `FAILED`, `CANCELLED`).
+6. **Optimized Server State & Cache Invalidation**: Powered by TanStack Query with structured query invalidation on mutations (e.g. task retries invalidate both `/tasks` and `/dlq`; workflow cancellations invalidate `/workflow-executions`).
+
 
