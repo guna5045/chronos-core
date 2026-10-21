@@ -1,8 +1,8 @@
 # Chronos Core - Architectural Specification
 
 ## Status
-- **Current Phase**: Phase 04 (Distributed Coordination)
-- **Document Version**: 0.4.0
+- **Current Phase**: Phase 06 (Distributed Scheduling & Task Distribution)
+- **Document Version**: 0.6.0
 
 ---
 
@@ -393,5 +393,137 @@ Worker nodes leverage Java 21 Virtual Threads (`VirtualThreadTaskExecutor`):
 - Provides unbounded lightweight concurrency for I/O-intensive task payloads.
 - Bounded capacity gating via atomic CAS counters (`activeTasks.getAndUpdate(...)`) up to `maxConcurrency`.
 - Cooperative cancellation through thread interruption and atomic cancellation flags.
+
+---
+
+## 8. Distributed Scheduling & Task Distribution Architecture (`chronos-coordinator`)
+
+Phase 06 establishes the distributed scheduling and task distribution engine connecting PostgreSQL durable state, Redis coordination, worker registry membership, consistent hashing, and gRPC dispatch.
+
+### 8.1 Architectural Flow & Separation of Concerns
+
+```
+                     TASK SUBMITTED
+                           │
+                           ▼
+                      PostgreSQL
+                     Durable State
+                           │
+                           ▼
+                    Task Scheduler
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+              ▼                         ▼
+         Ready Queue               Scheduling Rules
+         / Selection               Priority / Time
+              │
+              ▼
+        Worker Selection
+              │
+              ▼
+      Consistent Hash Ring
+              │
+              ▼
+       Worker A / B / C
+              │
+             gRPC
+              │
+              ▼
+          EXECUTION
+```
+
+The system strictly enforces tier isolation:
+- **PostgreSQL**: Authoritative durable storage for task state, audit records, and transactional outbox events. The scheduler never bypasses PostgreSQL.
+- **Redis**: Ephemeral leader leases, monotonically increasing fencing epoch counters, and per-task distributed coordination locks.
+- **In-Memory Coordinator Registry**: Real-time worker node membership, liveness states, and capacity tracking.
+- **gRPC (`chronos_task_execution.proto`)**: Binary RPC dispatch to worker nodes.
+
+### 8.2 Leader-Aware Scheduling & Fencing Protection
+
+Only the coordinator node currently holding the active cluster leadership lease executes the scheduling loop:
+- `LeaderAwareTaskScheduler` continuously monitors `LeaderElectionService.isLeader()`. Follower coordinators remain completely dormant in passive standby.
+- The scheduler subscribes to `LeadershipStateListener` callbacks. Upon lease expiration, GC pause, or ownership loss, `onLeadershipLost()` immediately flips the active execution flag and cancels in-flight scheduling loops.
+- Before every dispatch iteration, the scheduler asserts the active leader epoch with `FencingTokenService.validateFencingToken(...)`. If another coordinator has claimed leadership or incremented the cluster epoch, scheduling halts immediately with a `StaleLeaderException`.
+
+### 8.3 PostgreSQL Ready-Task Selection & Fairness Policy
+
+The scheduler selects pending work from PostgreSQL in bounded batches (default: 50 tasks per poll) using explicit transactional queries:
+- **Schedulable Task Query**:
+  ```sql
+  SELECT task_id, task_type, payload, priority, status, tenant_id, idempotency_key,
+         created_at, scheduled_at, deadline, timeout_ms, max_attempts, current_attempt, version
+  FROM chronos_tasks
+  WHERE status = 'QUEUED'
+    AND (scheduled_at IS NULL OR scheduled_at <= :asOf)
+  ORDER BY priority DESC,
+           scheduled_at ASC NULLS FIRST,
+           created_at ASC
+  LIMIT :limit
+  ```
+- **Anti-Starvation Aging Policy**:
+  To prevent continuous streams of `CRITICAL` and `HIGH` tasks from indefinitely starving `NORMAL` and `LOW` tasks, `SchedulingPolicy` reserves a configurable portion of each batch (default: 20%) for starved tasks identified by:
+  ```sql
+  SELECT ...
+  FROM chronos_tasks
+  WHERE status = 'QUEUED'
+    AND (scheduled_at IS NULL OR scheduled_at <= :asOf)
+    AND created_at <= :starvationCutoff
+  ORDER BY created_at ASC
+  LIMIT :limit
+  ```
+- Starved tasks take precedence in the dispatch batch, preserving fairness without sacrificing priority guarantees.
+
+### 8.4 Scheduled-At & Deadline Pre-Dispatch Enforcement
+
+- **Scheduled-At Gate**: Tasks configured with a future `scheduledAt` timestamp are filtered at the database query layer (`scheduled_at <= :asOf`). They safely remain `QUEUED` until their scheduled time arrives.
+- **Deadline Awareness**: Prior to dispatch, the scheduler evaluates whether `task.getDeadline()` has expired against current wall-clock time (`now > deadline`). If expired, the task is **not** dispatched to a worker; instead, it is atomically transitioned to `CANCELLED` via `TransactionalTaskService.transitionTask(..., TaskStatus.CANCELLED, "Task deadline exceeded prior to dispatch", ...)`.
+
+### 8.5 Distributed Task Locking & Transaction Boundaries
+
+To prevent competing coordinator instances or concurrent loops from attempting to dispatch the same task, the scheduler employs distributed task locks:
+- **Lock Acquisition**: Before processing, the scheduler acquires a Redis lock via `DistributedLockService.tryAcquire("task:" + taskId, lockTtl)`.
+- **Lock Scope**: If lock acquisition fails (task already locked by another thread), the task is skipped in this iteration.
+- **Decoupled Transaction Boundary**:
+  - The Redis lock is acquired *outside* the PostgreSQL transaction.
+  - The worker gRPC dispatch RPC is executed *outside* the database transaction.
+  - The database transaction (`TransactionalTaskService.startExecutionAttempt`) runs atomically *after* the worker responds with an acceptance.
+  - The Redis lock is unconditionally released in a `finally` block upon completion or failure.
+  - This architecture ensures that network latencies or worker dispatch delays never hold open database connections, preventing connection pool exhaustion and deadlocks.
+
+### 8.6 Consistent Hash Ring Architecture
+
+Deterministic worker assignment is provided by `ConsistentHashRing`:
+- **Virtual Nodes**: Each worker is assigned 128 virtual nodes (e.g. `worker-1#0`, `worker-1#1`, ... `worker-1#127`).
+- **Distribution Hash**: Uses MD5 as a fast, uniform, deterministic non-cryptographic distribution hash function mapping worker nodes and task IDs to a 64-bit integer ring.
+- **Data Structure**: `ConcurrentSkipListMap<Long, String>` stores ring tokens for thread-safe lock-free ceiling queries.
+- **Lookup & Wrap-Around**: Given `hash(taskId.toString())`, `ring.ceilingEntry(hash)` finds the first worker clockwise on the ring. If the hash exceeds the maximum ring token, the lookup seamlessly wraps around to `ring.firstEntry()`.
+- **Minimal Remapping**: Adding or removing a worker remaps only `1/N` of keys on average, leaving the remaining cluster mappings undisturbed.
+
+### 8.7 Worker Selection, Capacity Gating & Backpressure
+
+- **Worker Eligibility**: Only worker nodes in `WorkerState.ACTIVE` participate in the hash ring. Nodes in `REGISTERING`, `SUSPECTED`, or `REMOVED` states are excluded from dispatch.
+- **Capacity Verification**: Before dispatching to the primary hash ring candidate, the selector verifies `worker.hasAvailableCapacity()`.
+- **Candidate Fallback**: If the primary candidate is saturated (`activeTasks >= maxConcurrency`), the selector iterates along the ring (`ring.getCandidates(key)`) to find the next active worker with capacity.
+- **Admission Backpressure**: If all eligible active workers are saturated, dispatch is safely aborted (`NO_WORKER_AVAILABLE`). The task remains securely stored in PostgreSQL in `QUEUED` state, and the scheduler will poll it again on its next iteration without tight-loop busy-waiting or memory bloat.
+
+### 8.8 gRPC Task Dispatch & Atomic State Transition
+
+When an eligible worker is selected:
+1. `WorkerDispatchClient.dispatchTask(worker, assignment)` delivers the protobuf assignment over gRPC with a 5-second deadline.
+2. If the worker accepts (`accepted == true`):
+   - `TransactionalTaskService.startExecutionAttempt(taskId, workerId, attemptNumber)` atomically commits:
+     - Task status transition: `QUEUED -> DISPATCHED -> RUNNING`.
+     - Creation of `ExecutionAttempt` record.
+     - Append to `chronos_task_audit_log`.
+     - Staged outbox event `TaskStarted` in `chronos_outbox_events`.
+3. If the worker rejects (`CAPACITY_EXHAUSTED` or error):
+   - The task is not transitioned; it remains `QUEUED` in PostgreSQL.
+   - The distributed lock is released, allowing subsequent scheduler loops to re-evaluate it.
+
+### 8.9 Semantic Guarantee
+
+Chronos Core provides **at-least-once delivery with idempotency, transactional state transitions, distributed locking, and fencing-based stale-operation protection**. It does not claim exactly-once execution.
+
 
 

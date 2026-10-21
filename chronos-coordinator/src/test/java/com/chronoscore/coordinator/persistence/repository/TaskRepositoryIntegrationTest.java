@@ -230,4 +230,58 @@ class TaskRepositoryIntegrationTest {
         assertThat(queued.get(1).getTaskId()).isEqualTo(taskHigh.getTaskId());
         assertThat(queued.get(2).getTaskId()).isEqualTo(taskLow.getTaskId());
     }
+
+    @Test
+    @DisplayName("findSchedulableTasks: excludes tasks with future scheduledAt timestamps")
+    void testFindSchedulableTasksFiltersFutureTasks() {
+        Instant now = Instant.now();
+
+        Task readyTask1 = taskRepository.save(createSampleTask(UUID.randomUUID(), "t1", null).toBuilder()
+                .status(TaskStatus.QUEUED)
+                .priority(TaskPriority.HIGH)
+                .scheduledAt(now.minusSeconds(10))
+                .build());
+
+        Task readyTask2 = taskRepository.save(createSampleTask(UUID.randomUUID(), "t1", null).toBuilder()
+                .status(TaskStatus.QUEUED)
+                .priority(TaskPriority.NORMAL)
+                .scheduledAt(null)
+                .build());
+
+        Task futureTask = taskRepository.save(createSampleTask(UUID.randomUUID(), "t1", null).toBuilder()
+                .status(TaskStatus.QUEUED)
+                .priority(TaskPriority.CRITICAL) // Even CRITICAL must not be scheduled early
+                .scheduledAt(now.plusSeconds(300))
+                .build());
+
+        List<Task> schedulable = taskRepository.findSchedulableTasks(now, 10);
+
+        assertThat(schedulable).hasSize(2);
+        assertThat(schedulable).extracting(Task::getTaskId)
+                .containsExactly(readyTask1.getTaskId(), readyTask2.getTaskId())
+                .doesNotContain(futureTask.getTaskId());
+    }
+
+    @Test
+    @DisplayName("findStarvedTasks: identifies queued tasks waiting longer than maxWaitTime")
+    void testFindStarvedTasks() {
+        Instant now = Instant.now();
+
+        Task starvedTask = taskRepository.save(createSampleTask(UUID.randomUUID(), "t1", null).toBuilder()
+                .status(TaskStatus.QUEUED)
+                .priority(TaskPriority.LOW)
+                .createdAt(now.minusSeconds(120))
+                .build());
+
+        Task freshTask = taskRepository.save(createSampleTask(UUID.randomUUID(), "t1", null).toBuilder()
+                .status(TaskStatus.QUEUED)
+                .priority(TaskPriority.HIGH)
+                .createdAt(now.minusSeconds(5))
+                .build());
+
+        List<Task> starved = taskRepository.findStarvedTasks(now, Duration.ofSeconds(60), 10);
+
+        assertThat(starved).hasSize(1);
+        assertThat(starved.get(0).getTaskId()).isEqualTo(starvedTask.getTaskId());
+    }
 }

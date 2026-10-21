@@ -1,7 +1,7 @@
 # Chronos Core - Developer Setup & Contribution Guide
 
 ## Status
-- **Current Phase**: Phase 05 (Worker Cluster & gRPC Communication)
+- **Current Phase**: Phase 06 (Distributed Scheduling & Task Distribution)
 
 ---
 
@@ -167,19 +167,65 @@ To start the Coordinator gRPC server and a Worker node locally:
 
 ---
 
-## 6. Module Responsibilities
+## 6. Distributed Scheduling & Task Distribution Configuration (Phase 06)
+
+### 6.1 Scheduler & Hash Ring Environment Variables
+
+The leader-aware scheduler and consistent hash distribution ring are configured via application properties:
+
+| Property | Environment Variable | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `chronos.scheduler.enabled` | `CHRONOS_SCHEDULER_ENABLED` | `true` | Enable/disable the background leader scheduling loop. |
+| `chronos.scheduler.poll-interval` | `CHRONOS_SCHEDULER_POLL_INTERVAL` | `100ms` | Polling delay between consecutive scheduler iterations. |
+| `chronos.scheduler.batch-size` | `CHRONOS_SCHEDULER_BATCH_SIZE` | `50` | Maximum number of tasks selected per iteration. |
+| `chronos.scheduler.task-lock-ttl` | `CHRONOS_SCHEDULER_TASK_LOCK_TTL` | `30s` | Redis distributed lock TTL for task dispatch exclusivity. |
+| `chronos.scheduler.dispatch-timeout` | `CHRONOS_SCHEDULER_DISPATCH_TIMEOUT` | `5s` | Maximum duration to await worker gRPC dispatch response. |
+| `chronos.scheduler.aging-threshold` | `CHRONOS_SCHEDULER_AGING_THRESHOLD` | `30s` | Threshold duration after which a task is considered starved. |
+| `chronos.scheduler.starvation-ratio` | `CHRONOS_SCHEDULER_STARVATION_RATIO` | `0.2` | Fraction of batch capacity reserved for aged/starved tasks. |
+| `chronos.distribution.virtual-nodes-per-worker` | `CHRONOS_DISTRIBUTION_VIRTUAL_NODES` | `128` | Number of virtual nodes hashed per worker on the ring. |
+
+### 6.2 Running Scheduling Verification Tests
+
+To run the complete suite of scheduling, consistent hashing, and multi-worker distribution tests:
+
+```bash
+# Run Consistent Hash Ring unit and distribution tests
+mvn test -Dtest=ConsistentHashRingTest -pl chronos-coordinator
+
+# Run Hash Ring empirical distribution benchmark
+mvn test -Dtest=ConsistentHashRingBenchmarkTest -pl chronos-coordinator
+
+# Run Worker Selector tests (capacity gating and fallback)
+mvn test -Dtest=ConsistentHashWorkerSelectorTest -pl chronos-coordinator
+
+# Run Scheduling Policy tests (priority and anti-starvation aging)
+mvn test -Dtest=SchedulingPolicyTest -pl chronos-coordinator
+
+# Run Leader-Aware Scheduler tests (fencing, locking, deadlines, DB transitions)
+mvn test -Dtest=LeaderAwareTaskSchedulerTest -pl chronos-coordinator
+
+# Run Multi-Coordinator Concurrency Simulation (distributed locking verification)
+mvn test -Dtest=SchedulerConcurrencyIntegrationTest -pl chronos-coordinator
+
+# Run Multi-Worker Distribution Integration (load distribution and capacity limits)
+mvn test -Dtest=MultiWorkerDistributionIntegrationTest -pl chronos-coordinator
+```
+
+---
+
+## 7. Module Responsibilities
 
 | Module | Primary Responsibility |
 | :--- | :--- |
 | **`chronos-common`** | Core domain models (`Task`, `ExecutionAttempt`), enums (`TaskStatus`, `TaskPriority`), state machine, validation rules, shared DTOs, and Protobuf schemas. **Strictly zero business logic.** |
-| **`chronos-coordinator`** | Active-passive leader lease election, task priority scheduling, DAG execution engine, persistence, cluster management, and in-memory worker registry. |
+| **`chronos-coordinator`** | Active-passive leader lease election, task priority scheduling, DAG execution engine, persistence, cluster management, consistent hash distribution, and in-memory worker registry. |
 | **`chronos-worker`** | Worker execution runtime, Java 21 virtual thread executor, task cancellation enforcement, and gRPC heartbeat reporting. |
 | **`chronos-ai`** | Dedicated, isolated module boundary reserved for the AI Workflow and AI Operations agents. |
 | **`chronos-dashboard`** | React + TypeScript + Vite engineering control plane for cluster visibility and operations. |
 
 ---
 
-## 7. Frontend Build Instructions
+## 8. Frontend Build Instructions
 
 ```bash
 cd chronos-dashboard

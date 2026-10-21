@@ -1,8 +1,8 @@
 # Chronos Core - API & Shared Contracts Specification
 
 ## Status
-- **Current Phase**: Phase 05 (Worker Cluster & gRPC Communication)
-- **Specification Status**: Active Domain Contracts, Protocol Buffer Wire Schemas, & gRPC Service Interfaces
+- **Current Phase**: Phase 06 (Distributed Scheduling & Task Distribution)
+- **Specification Status**: Active Domain Contracts, Wire Schemas, Coordination Services, and Scheduling Interfaces
 - **REST API Status**: *Deferred to Phase 09 (Planned)*
 
 ---
@@ -171,7 +171,41 @@ Worker client interface communicating with Coordinator:
 
 ---
 
-## 6. Future REST API Endpoints (Phase 09 Blueprint)
+## 6. Distributed Scheduling & Task Distribution Contracts
+
+Introduced in Phase 06 for leader-aware scheduling, consistent hash routing, and worker selection:
+
+### 6.1 `TaskScheduler` (`com.chronoscore.coordinator.scheduler`)
+Leader-aware batch scheduling engine:
+- `SchedulingResult scheduleBatch()`: Executes a single scheduling iteration; asserts fencing tokens, selects ready tasks, acquires distributed locks, resolves workers, and dispatches via gRPC.
+- `void start()`: Starts the periodic scheduling polling loop on the leader node.
+- `void stop()`: Cooperatively stops the scheduling loop.
+- `boolean isRunning()`: Returns true if the scheduling loop is actively running.
+
+### 6.2 `WorkerSelector` (`com.chronoscore.coordinator.distribution`)
+Deterministic worker resolution abstraction:
+- `Optional<WorkerNode> selectWorker(String taskKey)`: Resolves an active worker node with available capacity for the specified task key using the consistent hash ring.
+
+### 6.3 `ConsistentHashRing` (`com.chronoscore.coordinator.distribution`)
+Reusable consistent hash ring implementation:
+- `void addWorker(String workerId)`: Hashes 128 virtual nodes for the worker and inserts them into the ring.
+- `void removeWorker(String workerId)`: Removes all 128 virtual nodes for the worker from the ring.
+- `Optional<String> getWorker(String key)`: Returns the primary worker owning the specified key.
+- `List<String> getCandidates(String key)`: Returns an ordered list of distinct worker candidates starting clockwise from the hash position with ring wrap-around.
+- `void reconcile(Collection<String> activeWorkerIds)`: Synchronizes ring membership with the current set of eligible active workers.
+- `int getWorkerCount()` / `int getVirtualNodeCount()`: Ring topology inspection.
+
+### 6.4 `SchedulerMetricsRecorder` (`com.chronoscore.coordinator.scheduler`)
+Observability SPI hook interface for metrics collection:
+- `void recordPoll()`: Increments scheduler poll iteration count.
+- `void recordTasksSelected(int count)`: Records count of tasks retrieved from database.
+- `void recordDispatchOutcome(DispatchOutcome outcome)`: Records count per dispatch outcome (`DISPATCHED`, `DEADLINE_EXPIRED`, `LOCKED_BY_OTHER`, `SKIPPED_NOT_QUEUED`, `NO_WORKER_AVAILABLE`, `DISPATCH_REJECTED`).
+- `void recordDispatchLatency(Duration latency)`: Tracks gRPC dispatch latency.
+- `void recordQueueDepth(int depth)`: Tracks pending queue depth.
+
+---
+
+## 7. Future REST API Endpoints (Phase 09 Blueprint)
 
 > **Notice**: The REST HTTP gateway endpoints are deferred to Phase 09.
 > Future endpoints will expose task submission (`POST /api/v1/tasks`), retrieval (`GET /api/v1/tasks/{id}`),

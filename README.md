@@ -70,13 +70,14 @@ chronos-core/
 
 ## 6. Development Status
 
-> **Current Status**: **Phase 05: Worker Cluster & gRPC Communication** Completed
+> **Current Status**: **Phase 06: Distributed Scheduling & Task Distribution** Completed
 
 - [x] **Phase 01: Project Foundation & Repository Setup**
 - [x] **Phase 02: Core Domain Model & Shared Contracts**
 - [x] **Phase 03: PostgreSQL Persistence & Schema Migrations**
 - [x] **Phase 04: Redis Coordination & Lease-Based Leader Election**
 - [x] **Phase 05: Worker Cluster & gRPC Communication**
+- [x] **Phase 06: Distributed Scheduling & Task Distribution**
 
 ---
 
@@ -87,11 +88,12 @@ chronos-core/
 3. **Phase 03: PostgreSQL Persistence & Schema Migrations** *(Completed)*
 4. **Phase 04: Redis Coordination & Lease-Based Leader Election** *(Completed)*
 5. **Phase 05: Worker Cluster & gRPC Communication** *(Completed)*
-6. **Phase 06: Task Scheduling, Dispatch & Failure Recovery**
-7. **Phase 07: Priority Queues, Retry & Backoff Engine**
+6. **Phase 06: Distributed Scheduling & Task Distribution** *(Completed)*
+7. **Phase 07: Failure Recovery, Retries & Deadlines**
 8. **Phase 08: Workflow DAG Execution Engine & Versioning**
 9. **Phase 09: REST API Gateway & Security**
 10. **Phase 10: Engineering Control Plane (React Dashboard)**
 11. **Phase 11: AI Workflow & Operations Agents**
 12. **Phase 12: Observability, Metrics & Production Hardening**
 13. **Phase 13: Distributed Chaos Testing & k6 Benchmarks**
+

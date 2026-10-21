@@ -164,9 +164,16 @@ public class JdbcTaskRepository implements TaskRepository {
 
     @Override
     public List<Task> findQueuedTasks(int limit) {
+        return findSchedulableTasks(Instant.now(), limit);
+    }
+
+    @Override
+    public List<Task> findSchedulableTasks(Instant asOf, int limit) {
         int maxLimit = Math.max(1, limit);
+        Instant effectiveAsOf = asOf != null ? asOf : Instant.now();
         String sql = "SELECT " + SELECT_COLUMNS + " FROM chronos_tasks " +
                 "WHERE status = 'QUEUED' " +
+                "  AND (scheduled_at IS NULL OR scheduled_at <= :asOf) " +
                 "ORDER BY " +
                 "CASE priority " +
                 "  WHEN 'CRITICAL' THEN 1 " +
@@ -178,7 +185,30 @@ public class JdbcTaskRepository implements TaskRepository {
                 "created_at ASC " +
                 "LIMIT :limit";
 
-        MapSqlParameterSource params = new MapSqlParameterSource("limit", maxLimit);
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("asOf", Timestamp.from(effectiveAsOf))
+                .addValue("limit", maxLimit);
+        return jdbcTemplate.query(sql, params, taskRowMapper);
+    }
+
+    @Override
+    public List<Task> findStarvedTasks(Instant asOf, Duration maxWaitTime, int limit) {
+        int maxLimit = Math.max(1, limit);
+        Instant effectiveAsOf = asOf != null ? asOf : Instant.now();
+        Duration effectiveMaxWait = maxWaitTime != null ? maxWaitTime : Duration.ofMinutes(1);
+        Instant cutoff = effectiveAsOf.minus(effectiveMaxWait);
+
+        String sql = "SELECT " + SELECT_COLUMNS + " FROM chronos_tasks " +
+                "WHERE status = 'QUEUED' " +
+                "  AND (scheduled_at IS NULL OR scheduled_at <= :asOf) " +
+                "  AND created_at <= :cutoff " +
+                "ORDER BY created_at ASC " +
+                "LIMIT :limit";
+
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("asOf", Timestamp.from(effectiveAsOf))
+                .addValue("cutoff", Timestamp.from(cutoff))
+                .addValue("limit", maxLimit);
         return jdbcTemplate.query(sql, params, taskRowMapper);
     }
 

@@ -28,4 +28,9 @@ chronos:
       port: 0
     cluster:
       enabled: false
+  scheduler:
+    enabled: false
+  distribution:
+    virtual-nodes-per-worker: 128
+
 

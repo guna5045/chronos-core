@@ -2,6 +2,8 @@ package com.chronoscore.coordinator.persistence.repository;
 
 import com.chronoscore.common.domain.Task;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -68,10 +70,30 @@ public interface TaskRepository {
 
     /**
      * Retrieves ready QUEUED tasks ordered by priority and schedule time.
-     * Prepared for future queue acquisition.
      *
      * @param limit maximum number of tasks to retrieve.
      * @return list of queued tasks.
      */
     List<Task> findQueuedTasks(int limit);
+
+    /**
+     * Retrieves schedulable QUEUED tasks whose scheduledAt is null or in the past (<= asOf),
+     * ordered by priority (CRITICAL > HIGH > NORMAL > LOW), scheduledAt ASC, and createdAt ASC.
+     *
+     * @param asOf timestamp threshold for scheduled tasks.
+     * @param limit maximum number of tasks to return.
+     * @return list of schedulable tasks ready for admission.
+     */
+    List<Task> findSchedulableTasks(Instant asOf, int limit);
+
+    /**
+     * Retrieves starved QUEUED tasks that have been waiting in queue longer than maxWaitTime
+     * (createdAt <= asOf - maxWaitTime), ordered by oldest created first.
+     *
+     * @param asOf current timestamp baseline.
+     * @param maxWaitTime wait duration threshold beyond which a task is considered starved.
+     * @param limit maximum number of starved tasks to return.
+     * @return list of starved tasks.
+     */
+    List<Task> findStarvedTasks(Instant asOf, Duration maxWaitTime, int limit);
 }

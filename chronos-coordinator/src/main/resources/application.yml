@@ -44,6 +44,16 @@ chronos:
       heartbeat-timeout: ${CHRONOS_WORKER_HEARTBEAT_TIMEOUT:3s}
       eviction-timeout: ${CHRONOS_WORKER_EVICTION_TIMEOUT:6s}
       health-check-interval: ${CHRONOS_WORKER_HEALTH_CHECK_INTERVAL:1s}
+  scheduler:
+    enabled: ${CHRONOS_SCHEDULER_ENABLED:true}
+    poll-interval-ms: ${CHRONOS_SCHEDULER_POLL_INTERVAL_MS:100}
+    batch-size: ${CHRONOS_SCHEDULER_BATCH_SIZE:50}
+    dispatch-timeout: ${CHRONOS_SCHEDULER_DISPATCH_TIMEOUT:5s}
+    task-lock-ttl: ${CHRONOS_SCHEDULER_LOCK_TTL:30s}
+    aging-threshold: ${CHRONOS_SCHEDULER_AGING_THRESHOLD:30s}
+    starvation-batch-ratio: ${CHRONOS_SCHEDULER_STARVATION_RATIO:0.2}
+  distribution:
+    virtual-nodes-per-worker: ${CHRONOS_DISTRIBUTION_VNODES:128}
 
 server:
   port: 8080

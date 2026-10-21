@@ -1,7 +1,7 @@
 # Chronos Core - Failure Modes & Resiliency Analysis
 
 ## Status
-- **Current Phase**: Phase 05 (Worker Cluster & gRPC Communication)
+- **Current Phase**: Phase 06 (Distributed Scheduling & Task Distribution)
 
 ---
 
@@ -56,14 +56,29 @@
 | **Coordinator Failover Re-Registration** | Coordinator leader dies; follower takes over. Worker detects broken gRPC stream. | Worker client catches stream termination, triggers exponential reconnect backoff, and performs fresh registration handshake. | Worker acquires new `sessionId` from new coordinator and resumes heartbeat stream seamlessly. |
 
 ---
-
-## 5. Distributed System Failure Modes (Planned - Future Phases)
-
+ 
+## 5. Distributed Scheduling & Distribution Failure Modes (Active in Phase 06)
+ 
+| Failure Scenario | Scheduling Impact | Detection & Mitigation | Resulting State |
+| :--- | :--- | :--- | :--- |
+| **Stale Leader Scheduling Attempt** | A coordinator node that lost its lease or experienced a GC pause attempts to run a scheduling loop. | Generational fencing assertion: `FencingTokenService.validateFencingToken(...)` checks leader epoch before batch execution. Throws `StaleLeaderException`. | Scheduling aborted immediately; no stale dispatches or DB writes occur. Coordinator reverts to standby. |
+| **Concurrent Task Scheduling Contention** | Multiple coordinator scheduling loops or threads attempt to schedule the same task. | Distributed task locking: `DistributedLockService.tryAcquire("task:" + taskId, ttl)` acquires lock before dispatch. Second attempt fails lock acquisition. | Winning thread dispatches task; losing thread logs debug message and skips task cleanly. |
+| **Primary Hash Ring Worker Saturated** | The worker designated by consistent hashing has reached `maxConcurrency`. | `ConsistentHashWorkerSelector` detects `!primary.hasAvailableCapacity()`. It walks the hash ring clockwise via `ring.getCandidates(key)` to find the next active worker with capacity. | Task is routed to fallback active worker; execution proceeds without artificial delay. |
+| **All Active Workers Saturated (Admission Backpressure)** | Entire worker cluster is running at 100% capacity. | `WorkerSelector.selectWorker(...)` returns `Optional.empty()`. Scheduler logs warning and marks dispatch `NO_WORKER_AVAILABLE`. | Task remains securely persisted in PostgreSQL in `QUEUED` state. No busy-loop or in-memory bloat. Picked up on subsequent poll. |
+| **Expired Task Deadline Pre-Dispatch** | A task's deadline passes while queued before worker assignment. | Scheduler checks `Instant.now().isAfter(task.getDeadline())`. | Task is not dispatched to worker. Atomically transitioned to `CANCELLED` via `TransactionalTaskService`. |
+| **Worker Dispatch Rejection** | Worker gRPC endpoint returns `accepted = false` (`CAPACITY_EXHAUSTED` or worker-side rejection). | Scheduler checks `response.getAccepted()`. Recognizes rejection. | State transition aborted. Distributed lock released safely. Task remains `QUEUED` in PostgreSQL. |
+| **Worker Node Unregistered / Removed** | Worker crashes or is evicted from registry between selection and dispatch. | `WorkerRegistry.getActiveWorkers()` excludes `REMOVED` or `SUSPECTED` nodes. Hash ring reconciles active set. Dispatch client detects dead channel. | Selection skips inactive node; gRPC failure aborts attempt gracefully, preserving `QUEUED` state. |
+ 
+---
+ 
+## 6. Distributed System Failure Modes (Planned - Future Phases)
+ 
 The following distributed failure modes represent the planned operational resiliency architecture:
-
+ 
 | Distributed Scenario | Implementation Phase | Planned Mitigation Mechanism |
 | :--- | :--- | :--- |
-| **Orphaned In-Flight Task Recovery** | Phase 06 | Coordinator detects evicted worker had active tasks. State machine marks attempts `TIMED_OUT` and re-queues tasks. |
+| **Orphaned In-Flight Task Recovery** | Phase 07 | Coordinator detects evicted worker had active tasks. State machine marks attempts `TIMED_OUT` and re-queues tasks. |
+| **Exponential Retry & Backoff Engine** | Phase 07 | Retry engine with exponential backoff and randomized jitter for failed attempts. |
 | **Transient Database Outage** | Phase 07 | HikariCP reconnect backpressure; incoming requests rejected with 503 until connection pool restored. |
 | **Worker Resource Starvation** | Phase 07 | Worker reports CPU/memory load in heartbeats; coordinator applies backpressure and throttles dispatches. |
 
