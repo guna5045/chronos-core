@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { getClusterOverview } from '../api/cluster';
@@ -15,14 +15,18 @@ import { formatDate } from '../utils/formatters';
 import {
   AlertTriangle,
   ArrowRight,
+  BarChart2,
   Cpu,
+  RefreshCw,
   Server,
   Zap,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export const DashboardPage: React.FC = () => {
-  // Real API queries with moderate polling
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Core API Queries
   const clusterQuery = useQuery({
     queryKey: ['clusterOverview'],
     queryFn: getClusterOverview,
@@ -53,13 +57,27 @@ export const DashboardPage: React.FC = () => {
     refetchInterval: 15000,
   });
 
-  const isLoading =
-    clusterQuery.isLoading ||
-    tasksQuery.isLoading ||
-    workersQuery.isLoading ||
-    workflowsQuery.isLoading;
+  const handleRefreshAll = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.allSettled([
+        clusterQuery.refetch(),
+        tasksQuery.refetch(),
+        workersQuery.refetch(),
+        workflowsQuery.refetch(),
+        dlqQuery.refetch(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
-  if (isLoading) {
+  const isLoadingInitial =
+    clusterQuery.isLoading &&
+    tasksQuery.isLoading &&
+    workersQuery.isLoading;
+
+  if (isLoadingInitial) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
         <div>
@@ -75,13 +93,19 @@ export const DashboardPage: React.FC = () => {
     );
   }
 
+  // Determine query errors
+  const anyError =
+    clusterQuery.isError ? clusterQuery.error :
+    tasksQuery.isError ? tasksQuery.error :
+    workersQuery.isError ? workersQuery.error : null;
+
   const cluster = clusterQuery.data;
   const tasks = tasksQuery.data?.items || [];
   const workers = workersQuery.data || [];
-  const workflowCount = workflowsQuery.data?.length ?? 0;
-  const dlqCount = dlqQuery.data?.totalElements ?? 0;
+  const workflowCount = workflowsQuery.data?.length;
+  const dlqCount = dlqQuery.data?.totalElements;
 
-  // Derive real status counts from actual returned dataset
+  // Derive status counts from actual backend dataset
   const statusCounts: Record<string, number> = {
     QUEUED: 0,
     DISPATCHED: 0,
@@ -98,19 +122,25 @@ export const DashboardPage: React.FC = () => {
     }
   });
 
+  if (typeof dlqCount === 'number') {
+    statusCounts.DLQ = dlqCount;
+  }
+
+  const totalExecutedOrQueued = Object.values(statusCounts).reduce((a, b) => a + b, 0);
+
   const chartData = [
     { status: 'QUEUED', count: statusCounts.QUEUED, fill: '#6366f1' },
     { status: 'DISPATCHED', count: statusCounts.DISPATCHED, fill: '#3b82f6' },
     { status: 'RUNNING', count: statusCounts.RUNNING, fill: '#0284c7' },
     { status: 'SUCCEEDED', count: statusCounts.SUCCEEDED, fill: '#10b981' },
     { status: 'FAILED', count: statusCounts.FAILED, fill: '#f43f5e' },
-    { status: 'DLQ', count: dlqCount, fill: '#f59e0b' },
+    { status: 'DLQ', count: statusCounts.DLQ, fill: '#f59e0b' },
     { status: 'CANCELLED', count: statusCounts.CANCELLED, fill: '#64748b' },
   ];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
-      {/* Page Title */}
+      {/* Page Title & Control Bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <h2 style={{ fontSize: '1.35rem', fontWeight: 700, color: 'var(--text-main)', letterSpacing: '0.01em' }}>
@@ -120,50 +150,116 @@ export const DashboardPage: React.FC = () => {
             Cluster coordination, worker fleet utilization, and task throughput
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-faint)' }}>
-          <span>Polling interval: 10s</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button
+            onClick={handleRefreshAll}
+            disabled={isRefreshing}
+            className="btn btn-secondary btn-sm"
+            title="Refresh cluster telemetry"
+          >
+            <RefreshCw
+              size={13}
+              style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }}
+            />
+            <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+          </button>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-faint)' }}>Polling: 10s</span>
         </div>
       </div>
 
-      {clusterQuery.isError && (
-        <ErrorAlert error={clusterQuery.error} onRetry={() => clusterQuery.refetch()} />
+      {/* Surface error with interactive Retry if any main query failed */}
+      {anyError && (
+        <ErrorAlert
+          error={anyError}
+          onRetry={handleRefreshAll}
+          isRetrying={isRefreshing}
+        />
       )}
 
-      {/* Cluster Metrics Row */}
+      {/* Cluster Metrics Row - Distinguish real 0 from Data Unavailable */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '1rem' }}>
         <MetricCard
           title="Cluster Leadership"
-          value={cluster?.isLeader ? 'ACTIVE LEADER' : 'STANDBY'}
-          subtitle={`Epoch #${cluster?.leaderEpoch ?? 0} • ${cluster?.coordinatorId ?? 'unknown'}`}
+          value={
+            clusterQuery.isError
+              ? 'DATA UNAVAILABLE'
+              : cluster?.isLeader
+              ? 'ACTIVE LEADER'
+              : 'STANDBY FOLLOWER'
+          }
+          subtitle={
+            clusterQuery.isError
+              ? 'Coordinator unreachable'
+              : `Epoch #${cluster?.leaderEpoch ?? 0} • ${cluster?.coordinatorId ?? 'unknown'}`
+          }
           icon={<Server size={20} />}
-          accentColor={cluster?.isLeader ? 'var(--accent-emerald)' : 'var(--accent-amber)'}
+          accentColor={
+            clusterQuery.isError
+              ? 'var(--text-muted)'
+              : cluster?.isLeader
+              ? 'var(--accent-emerald)'
+              : 'var(--accent-amber)'
+          }
         />
+
         <MetricCard
           title="Active Workers"
-          value={`${cluster?.activeWorkers ?? 0} / ${cluster?.totalWorkers ?? 0}`}
-          subtitle={`${cluster?.suspectedWorkers ?? 0} suspected node(s)`}
+          value={
+            workersQuery.isError
+              ? 'DATA UNAVAILABLE'
+              : `${cluster?.activeWorkers ?? workers.filter(w => w.state === 'ACTIVE').length} / ${cluster?.totalWorkers ?? workers.length}`
+          }
+          subtitle={
+            workersQuery.isError
+              ? 'Worker status unavailable'
+              : `${cluster?.suspectedWorkers ?? workers.filter(w => w.state === 'SUSPECTED').length} suspected node(s)`
+          }
           icon={<Cpu size={20} />}
-          accentColor="var(--accent-cyan)"
+          accentColor={workersQuery.isError ? 'var(--text-muted)' : 'var(--accent-cyan)'}
         />
+
         <MetricCard
           title="Cluster Capacity"
-          value={`${cluster?.availableClusterCapacity ?? 0} slots`}
-          subtitle={`Total: ${cluster?.totalClusterCapacity ?? 0} • Running: ${cluster?.activeClusterTasks ?? 0}`}
+          value={
+            clusterQuery.isError
+              ? 'DATA UNAVAILABLE'
+              : `${cluster?.availableClusterCapacity ?? 0} slots`
+          }
+          subtitle={
+            clusterQuery.isError
+              ? 'Capacity metrics unreachable'
+              : `Total: ${cluster?.totalClusterCapacity ?? 0} • Running: ${cluster?.activeClusterTasks ?? 0}`
+          }
           icon={<Zap size={20} />}
-          accentColor="var(--accent-blue)"
+          accentColor={clusterQuery.isError ? 'var(--text-muted)' : 'var(--accent-blue)'}
         />
+
         <MetricCard
           title="Dead-Letter Queue"
-          value={dlqCount}
-          subtitle={`Tasks in DLQ • ${workflowCount} registered workflow(s)`}
+          value={
+            dlqQuery.isError
+              ? 'DATA UNAVAILABLE'
+              : dlqCount ?? 0
+          }
+          subtitle={
+            workflowsQuery.isError
+              ? 'Workflow telemetry unreachable'
+              : `Tasks in DLQ • ${workflowCount ?? 0} workflow(s)`
+          }
           icon={<AlertTriangle size={20} />}
-          accentColor={dlqCount > 0 ? 'var(--accent-amber)' : 'var(--text-muted)'}
+          accentColor={
+            dlqQuery.isError
+              ? 'var(--text-muted)'
+              : (dlqCount && dlqCount > 0)
+              ? 'var(--accent-amber)'
+              : 'var(--accent-emerald)'
+          }
         />
       </div>
 
       {/* Real Task Distribution Chart & Live Telemetry Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '1.25rem' }}>
-        {/* Real Task Distribution Chart */}
+        {/* Real Task Distribution Chart (Supporting all 5 States) */}
         <div
           style={{
             backgroundColor: 'var(--bg-surface)',
@@ -175,9 +271,16 @@ export const DashboardPage: React.FC = () => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>
-              Recent Tasks Distribution (Sampled N={tasks.length})
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>
+                Recent Task Distribution
+              </h3>
+              {tasksQuery.isSuccess && (
+                <span className="font-mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  (Sampled N={tasks.length})
+                </span>
+              )}
+            </div>
             <Link
               to="/tasks"
               style={{
@@ -194,40 +297,67 @@ export const DashboardPage: React.FC = () => {
             </Link>
           </div>
 
-          <div style={{ height: '220px', width: '100%' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
-                <XAxis
-                  dataKey="status"
-                  stroke="var(--text-faint)"
-                  fontSize={10}
-                  fontFamily="var(--font-mono)"
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="var(--text-faint)"
-                  fontSize={10}
-                  fontFamily="var(--font-mono)"
-                  allowDecimals={false}
-                  tickLine={false}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'var(--bg-surface)',
-                    border: '1px solid var(--border-default)',
-                    borderRadius: '0.375rem',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-main)',
-                  }}
-                  cursor={{ fill: 'rgba(255, 255, 255, 0.04)' }}
-                />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                  {chartData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          {/* Chart State Handling */}
+          <div style={{ height: '220px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {tasksQuery.isLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+                <RefreshCw size={18} className="spin" color="var(--accent-cyan)" />
+                <span>Loading execution distribution...</span>
+              </div>
+            ) : tasksQuery.isError ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.65rem', padding: '1rem', textAlign: 'center' }}>
+                <AlertTriangle size={24} color="var(--accent-rose)" />
+                <span style={{ fontSize: '0.8125rem', color: 'var(--text-main)' }}>Unable to load execution distribution</span>
+                <button onClick={() => tasksQuery.refetch()} className="btn btn-secondary btn-sm">
+                  <RefreshCw size={12} />
+                  <span>Retry</span>
+                </button>
+              </div>
+            ) : totalExecutedOrQueued === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: '0.5rem', textAlign: 'center', padding: '1rem' }}>
+                <BarChart2 size={32} color="var(--text-faint)" />
+                <span style={{ fontSize: '0.8125rem', fontWeight: 500, color: 'var(--text-main)' }}>
+                  No task executions in the selected interval.
+                </span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Submit a task using &ldquo;Submit Task&rdquo; to begin tracking lifecycle transitions.
+                </span>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                  <XAxis
+                    dataKey="status"
+                    stroke="var(--chart-text)"
+                    fontSize={10}
+                    fontFamily="var(--font-mono)"
+                    tickLine={false}
+                  />
+                  <YAxis
+                    stroke="var(--chart-text)"
+                    fontSize={10}
+                    fontFamily="var(--font-mono)"
+                    allowDecimals={false}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'var(--chart-tooltip-bg)',
+                      borderColor: 'var(--chart-tooltip-border)',
+                      borderRadius: '0.375rem',
+                      fontSize: '0.75rem',
+                      color: 'var(--text-main)',
+                    }}
+                    cursor={{ fill: 'var(--bg-hover)' }}
+                  />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -244,7 +374,7 @@ export const DashboardPage: React.FC = () => {
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
             <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>
-              Registered Workers ({workers.length})
+              Registered Workers {workersQuery.isSuccess ? `(${workers.length})` : ''}
             </h3>
             <Link
               to="/workers"
@@ -262,7 +392,11 @@ export const DashboardPage: React.FC = () => {
             </Link>
           </div>
 
-          {workers.length === 0 ? (
+          {workersQuery.isError ? (
+            <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--accent-rose)', fontSize: '0.8125rem' }}>
+              Worker fleet data unavailable. Coordinator connection failed.
+            </div>
+          ) : workers.length === 0 ? (
             <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
               No workers currently registered. Start a <code className="font-mono">chronos-worker</code> instance to begin executing tasks.
             </div>
@@ -329,7 +463,11 @@ export const DashboardPage: React.FC = () => {
           </Link>
         </div>
 
-        {tasks.length === 0 ? (
+        {tasksQuery.isError ? (
+          <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--accent-rose)', fontSize: '0.8125rem' }}>
+            Task persistence query failed. Check coordinator connectivity.
+          </div>
+        ) : tasks.length === 0 ? (
           <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             No tasks found in cluster database. Click &ldquo;Submit Task&rdquo; to launch work.
           </div>

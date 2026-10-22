@@ -69,10 +69,21 @@ public class RedisLeaderElectionService implements LeaderElectionService, SmartL
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ScheduledExecutorService scheduler;
 
+    private final com.chronoscore.coordinator.observability.ChronosMetricsService metricsService;
+
     public RedisLeaderElectionService(StringRedisTemplate redisTemplate,
                                       CoordinationProperties properties) {
+        this(redisTemplate, properties, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public RedisLeaderElectionService(StringRedisTemplate redisTemplate,
+                                      CoordinationProperties properties,
+                                      @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                      com.chronoscore.coordinator.observability.ChronosMetricsService metricsService) {
         this.redisTemplate = Objects.requireNonNull(redisTemplate, "redisTemplate must not be null");
         this.properties = Objects.requireNonNull(properties, "properties must not be null");
+        this.metricsService = metricsService;
         this.coordinatorId = properties.getCoordinatorId();
 
         this.renewScript = new DefaultRedisScript<>(RENEW_LUA_SCRIPT, Long.class);
@@ -219,12 +230,20 @@ public class RedisLeaderElectionService implements LeaderElectionService, SmartL
             LeaderIdentity lost = LeaderIdentity.lost(coordinatorId, previous.getLeaderEpoch());
             currentIdentity.set(lost);
             log.warn("Coordinator '{}' lost leadership for epoch {}: {}", coordinatorId, previous.getLeaderEpoch(), reason);
+            if (metricsService != null) {
+                metricsService.recordLeadershipLost();
+                metricsService.updateLeadershipState(false, 0);
+            }
             notifyLost(lost);
             currentIdentity.set(LeaderIdentity.follower(coordinatorId));
         }
     }
 
     private void notifyAcquired(LeaderIdentity identity) {
+        if (metricsService != null && identity != null) {
+            metricsService.recordLeadershipAcquired();
+            metricsService.updateLeadershipState(true, identity.getLeaderEpoch());
+        }
         for (LeadershipStateListener listener : listeners) {
             try {
                 listener.onLeadershipAcquired(identity);

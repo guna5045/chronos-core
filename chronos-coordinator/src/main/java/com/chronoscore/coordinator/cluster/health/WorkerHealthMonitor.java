@@ -38,18 +38,23 @@ public class WorkerHealthMonitor implements SmartLifecycle {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ScheduledExecutorService scheduler;
 
+    private final com.chronoscore.coordinator.observability.ChronosMetricsService metricsService;
+
     public WorkerHealthMonitor(WorkerRegistry workerRegistry, ClusterProperties clusterProperties) {
-        this(workerRegistry, clusterProperties, null);
+        this(workerRegistry, clusterProperties, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public WorkerHealthMonitor(WorkerRegistry workerRegistry,
                                ClusterProperties clusterProperties,
                                @org.springframework.beans.factory.annotation.Autowired(required = false)
-                               com.chronoscore.coordinator.recovery.TaskRecoveryService taskRecoveryService) {
+                               com.chronoscore.coordinator.recovery.TaskRecoveryService taskRecoveryService,
+                               @org.springframework.beans.factory.annotation.Autowired(required = false)
+                               com.chronoscore.coordinator.observability.ChronosMetricsService metricsService) {
         this.workerRegistry = Objects.requireNonNull(workerRegistry, "workerRegistry must not be null");
         this.clusterProperties = Objects.requireNonNull(clusterProperties, "clusterProperties must not be null");
         this.taskRecoveryService = taskRecoveryService;
+        this.metricsService = metricsService;
     }
 
     /**
@@ -61,17 +66,27 @@ public class WorkerHealthMonitor implements SmartLifecycle {
         Duration heartbeatTimeout = clusterProperties.getCluster().getHeartbeatTimeout();
         Duration evictionTimeout = clusterProperties.getCluster().getEvictionTimeout();
 
-        for (WorkerNode worker : workerRegistry.getAllWorkers()) {
+        int active = 0;
+        int suspected = 0;
+        var all = workerRegistry.getAllWorkers();
+        for (WorkerNode worker : all) {
             Duration elapsed = Duration.between(worker.lastHeartbeatAt(), now);
 
             if (worker.state() == WorkerState.ACTIVE && elapsed.compareTo(heartbeatTimeout) > 0) {
                 log.warn("Worker '{}' missed heartbeats (elapsed: {}ms > timeout: {}ms). Transitioning to SUSPECTED.",
                         worker.workerId(), elapsed.toMillis(), heartbeatTimeout.toMillis());
                 workerRegistry.updateState(worker.workerId(), worker.sessionId(), WorkerState.SUSPECTED);
+                if (metricsService != null) {
+                    metricsService.recordHeartbeatMissed();
+                }
+                suspected++;
             } else if (worker.state() == WorkerState.SUSPECTED && elapsed.compareTo(evictionTimeout) > 0) {
                 log.error("Worker '{}' exceeded eviction timeout (elapsed: {}ms > eviction: {}ms). Transitioning to REMOVED.",
                         worker.workerId(), elapsed.toMillis(), evictionTimeout.toMillis());
                 workerRegistry.updateState(worker.workerId(), worker.sessionId(), WorkerState.REMOVED);
+                if (metricsService != null) {
+                    metricsService.recordWorkerEvicted();
+                }
                 if (taskRecoveryService != null) {
                     try {
                         taskRecoveryService.recoverWorkerFailure(worker.workerId());
@@ -79,7 +94,15 @@ public class WorkerHealthMonitor implements SmartLifecycle {
                         log.error("Failed to recover tasks for evicted worker '{}': {}", worker.workerId(), ex.getMessage(), ex);
                     }
                 }
+            } else if (worker.state() == WorkerState.ACTIVE) {
+                active++;
+            } else if (worker.state() == WorkerState.SUSPECTED) {
+                suspected++;
             }
+        }
+
+        if (metricsService != null) {
+            metricsService.updateFleetCounts(active, suspected, all.size());
         }
     }
 

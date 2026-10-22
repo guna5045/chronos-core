@@ -1,0 +1,78 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 600,
+      "title": "AI Assistants (Workflow & Operations)",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "title": "AI Invocations Total",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_ai_requests_total", "legendFormat": "Invocations" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "title": "AI Provider Failures",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_ai_failures_total", "legendFormat": "Failures" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "title": "Workflow Proposals Generated",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_ai_proposals_total", "legendFormat": "Proposals" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "title": "Operational Actions Approved",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_ai_actions_approved_total", "legendFormat": "Approved" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "title": "AI Provider Latency (P50, P95, P99)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(chronos_ai_provider_seconds_bucket[5m])) by (le))", "legendFormat": "P50 (s)" },
+        { "expr": "histogram_quantile(0.95, sum(rate(chronos_ai_provider_seconds_bucket[5m])) by (le))", "legendFormat": "P95 (s)" },
+        { "expr": "histogram_quantile(0.99, sum(rate(chronos_ai_provider_seconds_bucket[5m])) by (le))", "legendFormat": "P99 (s)" }
+      ]
+    },
+    {
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "title": "AI Proposals & Human Review Transitions",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(chronos_ai_proposals_total[1m])", "legendFormat": "Proposals/s" },
+        { "expr": "rate(chronos_ai_actions_approved_total[1m])", "legendFormat": "Approved/s" },
+        { "expr": "rate(chronos_ai_actions_rejected_total[1m])", "legendFormat": "Rejected/s" },
+        { "expr": "rate(chronos_ai_actions_stale_total[1m])", "legendFormat": "Stale/Expired/s" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["chronos", "ai", "operations", "workflows"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Chronos Core - AI Subsystem",
+  "uid": "chronos-ai"
+}

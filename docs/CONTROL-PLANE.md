@@ -192,3 +192,29 @@ Phase 12 integrates dedicated, task-oriented AI assistant consoles into the cont
   - Human approval gate requiring an operational reason logged to audit trail.
   - **Stale State Protection**: If the target state has evolved (e.g. task already succeeded before approval), the UI displays a clear conflict warning preventing duplicate or invalid execution.
 
+---
+
+## 7. Phase 13 Control Plane Hardening & Design System
+
+### 7.1 Global Theme System (Light & Dark Mode)
+The Control Plane features a semantic design token architecture in `index.css`:
+- **Default Dark Theme**: Clean deep neutral background (`#090d16`), elevated slate surfaces (`#0f172a`), muted borders (`#1e293b`), and cyan operational accents.
+- **Independent Light Theme**: Clean high-contrast background (`#f8fafc`), crisp card surfaces (`#ffffff`), and slate text (`#0f172a`), with **zero dark leftovers** on cards, tooltips, tables, or navigation.
+- **Persistence**: User selection persists in `localStorage` under `chronos_theme` with instant switching via the Header Moon/Sun button.
+
+### 7.2 Five-State Recharts Task Distribution
+The execution distribution bar chart handles five explicit operational states:
+1. **Loading**: Renders dedicated loading skeleton with spinning indicators.
+2. **Error**: Renders structured `ErrorAlert` with interactive retry button.
+3. **No Data**: Renders clear message (`"No task executions in the selected interval."`) rather than an empty broken graph.
+4. **Data Available**: Renders high-performance bar chart with real-time category counts (`QUEUED`, `DISPATCHED`, `RUNNING`, `SUCCEEDED`, `FAILED`, `DLQ`, `CANCELLED`).
+5. **Partial Data**: Displays telemetry with clear partial indicators if satellite endpoints are degraded.
+
+### 7.3 Observability & Telemetry View (`/observability`)
+Dedicated operator console displaying:
+- Prometheus scrape link (`/actuator/prometheus`).
+- Health probes: Liveness and Readiness state.
+- Distributed tracing bridge architecture and W3C trace context propagation.
+- Micrometer metric catalog and Chaos Engineering invariant verification table.
+
+

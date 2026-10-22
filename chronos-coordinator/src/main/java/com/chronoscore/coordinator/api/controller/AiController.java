@@ -46,14 +46,27 @@ public class AiController {
     private final AiStatusService statusService;
     private final TenantSecurityContext securityContext;
 
+    private final com.chronoscore.coordinator.observability.ChronosMetricsService metricsService;
+
     public AiController(AiWorkflowService workflowService,
                         AiOperationsService operationsService,
                         AiStatusService statusService,
                         TenantSecurityContext securityContext) {
+        this(workflowService, operationsService, statusService, securityContext, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AiController(AiWorkflowService workflowService,
+                        AiOperationsService operationsService,
+                        AiStatusService statusService,
+                        TenantSecurityContext securityContext,
+                        @org.springframework.beans.factory.annotation.Autowired(required = false)
+                        com.chronoscore.coordinator.observability.ChronosMetricsService metricsService) {
         this.workflowService = Objects.requireNonNull(workflowService, "workflowService must not be null");
         this.operationsService = Objects.requireNonNull(operationsService, "operationsService must not be null");
         this.statusService = Objects.requireNonNull(statusService, "statusService must not be null");
         this.securityContext = Objects.requireNonNull(securityContext, "securityContext must not be null");
+        this.metricsService = metricsService;
     }
 
     /**
@@ -74,7 +87,13 @@ public class AiController {
             @Valid @RequestBody GenerateWorkflowRequest request) {
 
         String effectiveTenantId = securityContext.resolveEffectiveTenantId(request.tenantId());
+        if (metricsService != null) {
+            metricsService.recordAiRequest("workflow_generate");
+        }
         AiWorkflowProposal proposal = workflowService.generateProposal(request, effectiveTenantId);
+        if (metricsService != null) {
+            metricsService.recordAiProposalGenerated();
+        }
 
         return ResponseEntity.ok(proposal);
     }
@@ -125,6 +144,10 @@ public class AiController {
                 securityContext.getTenantId().orElse(null)
         );
 
+        if (metricsService != null) {
+            metricsService.recordAiProposalApproved();
+        }
+
         return ResponseEntity.ok(result);
     }
 
@@ -143,6 +166,10 @@ public class AiController {
 
         String reason = body != null ? body.get("reason") : "Operator rejected proposal";
         workflowService.rejectProposal(proposalId, securityContext.getUsername(), reason);
+
+        if (metricsService != null) {
+            metricsService.recordAiProposalRejected();
+        }
 
         return ResponseEntity.ok(Map.of("status", "REJECTED", "proposalId", proposalId.toString()));
     }

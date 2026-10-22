@@ -1,0 +1,126 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Cluster State & Executive Summary",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 1 },
+      "title": "Active Leader State",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_leader_status", "legendFormat": "Leader" }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 2,
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 1 },
+      "title": "Fencing Epoch",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_leader_epoch", "legendFormat": "Epoch" }],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 1 },
+      "title": "Active Workers",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_workers_active", "legendFormat": "Workers" }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 4,
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+      "title": "Active Tasks",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_tasks_inflight", "legendFormat": "Running" }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 5,
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+      "title": "Queue Depth",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_tasks_queue_depth", "legendFormat": "Queued" }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "id": 6,
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 1 },
+      "title": "DLQ Depth",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_tasks_dlq_total", "legendFormat": "DLQ" }],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 101,
+      "title": "Task Throughput & Lifecycle Transitions",
+      "type": "row"
+    },
+    {
+      "id": 7,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "title": "Task Lifecycle Rates (Tasks/sec)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(chronos_tasks_submitted_total[1m])", "legendFormat": "Submitted" },
+        { "expr": "rate(chronos_tasks_dispatched_total[1m])", "legendFormat": "Dispatched" },
+        { "expr": "rate(chronos_tasks_completed_total{status=\"SUCCEEDED\"}[1m])", "legendFormat": "Succeeded" },
+        { "expr": "rate(chronos_tasks_completed_total{status=\"FAILED\"}[1m])", "legendFormat": "Failed" },
+        { "expr": "rate(chronos_tasks_dlq_total[1m])", "legendFormat": "DLQ" }
+      ]
+    },
+    {
+      "id": 8,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "title": "Task Execution Duration (P50, P95, P99)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(chronos_task_execution_seconds_bucket[5m])) by (le))", "legendFormat": "P50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(chronos_task_execution_seconds_bucket[5m])) by (le))", "legendFormat": "P95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(chronos_task_execution_seconds_bucket[5m])) by (le))", "legendFormat": "P99" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["chronos", "overview", "control-plane"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Chronos Core - System Overview",
+  "uid": "chronos-overview"
+}

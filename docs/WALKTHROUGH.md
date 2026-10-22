@@ -1,55 +1,78 @@
-# Chronos Core - System Walkthrough & Operational Lifecycle
+# Chronos Core — System Walkthrough & Operational Lifecycle (Phase 13)
 
-## Status
-- **Current Phase**: Phase 02 (Core Domain Model & Shared Contracts)
+## 1. System Status
+- **Current Phase**: Phase 13 (Observability, Testing & Chaos Engineering + Control Plane Hardening)
+- **Runtime Stack**: Java 21, Spring Boot 3.4, PostgreSQL 16, Redis 7.2, gRPC 1.69, OpenTelemetry, Micrometer, React 18, Vite 6, TypeScript 5.
 
 ---
 
-## 1. Task Lifecycle Sequence
-
-In Chronos Core, every task progresses through a strictly validated finite state machine:
+## 2. Canonical Task Lifecycle Walkthrough
 
 ```text
-Task Submission (TaskSubmissionDTO)
-    │
-    ▼
-[ CREATED ]
-    │ (validation passed, enqueued)
-    ▼
- [ QUEUED ]
-    │ (priority scheduler matches available worker)
-    ▼
-[ DISPATCHED ]
-    │ (worker picks up task and begins run)
-    ▼
- [ RUNNING ]
-    │
-    ├──► [ SUCCEEDED ] ──► (Terminal state; task completed)
-    │
-    ├──► [ CANCELLED ] ──► (Terminal state; operator/timeout abort)
-    │
-    └──► [ FAILED ]
-            │
-            ▼ (evaluate attempts against maxAttempts)
-     ┌──────────────┴──────────────┐
-     │                             │
+POST /api/v1/tasks (X-Request-Id: client-101)
+     │
+     ▼ [TraceAndCorrelationFilter] -> MDC (requestId, traceId)
+[ CREATED ] (Validated against Tenant Quota & Idempotency Key)
+     │
+     ▼ [PostgreSQL INSERT via Outbox Pattern]
+ [ QUEUED ] (Eligible for priority scheduler dispatch)
+     │
+     ▼ [Leader-Aware Scheduler with Redis Lock & Consistent Hashing]
+[ DISPATCHED ] (Exclusive execution lease acquired in chronos_task_leases)
+     │
+     ▼ [gRPC Dispatch with W3C traceparent metadata]
+ [ RUNNING ] (Worker executes task, streams heartbeats every 2s)
+     │
+     ├──► [ SUCCEEDED ] ──► (Terminal state; execution lease released)
+     │
+     ├──► [ CANCELLED ] ──► (Terminal state; cooperative cancellation gRPC)
+     │
+     └──► [ FAILED ]
+             │
+             ▼ (evaluate currentAttempt against maxAttempts)
+      ┌──────────────┴──────────────┐
+      │                             │
 (currentAttempt < maxAttempts)     (currentAttempt >= maxAttempts)
-     │                             │
-     ▼                             ▼
- [ QUEUED ] (Retry backoff)     [ DLQ ] (Dead-Letter Queue; Terminal)
+      │                             │
+      ▼                             ▼
+  [ QUEUED ] (Exponential backoff) [ DLQ ] (Dead-Letter Queue; Terminal)
 ```
 
 ---
 
-## 2. Phase-by-Phase Implementation Note
+## 3. Workflow DAG Execution Walkthrough
 
-> **Important**: In Phase 02, only the domain models, validation contracts, state machine transitions, and Protobuf serialization definitions are active.
->
-> The actual runtime components:
-> - **Durable persistence**: PostgreSQL tables and schema migrations (Phase 03)
-> - **Cluster coordination & locking**: Redis lease-based leader election (Phase 04)
-> - **Execution engine & state transitions in DB**: Task state machine persistence (Phase 05)
-> - **Bidirectional network communication**: gRPC worker heartbeats & dispatching (Phase 06)
-> - **Priority queue scheduling**: Worker capacity matching with aging (Phase 07)
->
-> will be implemented in their respective subsequent phases.
+```text
+POST /api/v1/workflow-executions
+     │
+     ▼
+Workflow Version Immutable Snapshot
+     │
+     ▼
+[Root Nodes Activated: Parallel Fan-Out]
+Node A1 (RUNNING)               Node A2 (RUNNING)
+     │                                │
+     ▼                                ▼
+Node A1 (SUCCEEDED)             Node A2 (SUCCEEDED)
+     │                                │
+     └────────────────┬───────────────┘
+                      │
+                      ▼ [Barrier Fan-In Satisfaction]
+                 Node B (RUNNING)
+                      │
+                      ▼
+                 Node B (SUCCEEDED)
+                      │
+                      ▼
+            Workflow Execution SUCCEEDED
+```
+
+---
+
+## 4. Operational Control Plane Verification
+
+1. **Overview Console (`/`)**: Real-time cluster status, active leader epoch, worker utilization, DLQ depth, and 5-state Recharts execution distribution.
+2. **Tasks & DLQ (`/tasks`, `/dlq`)**: Interactive task submission, execution timeline, attempt logs, and authorized DLQ replay.
+3. **Workers Fleet (`/workers`)**: Real-time heartbeat tracking, state transitions (`ACTIVE`, `SUSPECTED`, `REMOVED`), and capacity management.
+4. **Observability (`/observability`)**: Direct link to `/actuator/prometheus`, health liveness/readiness probes, distributed tracing architecture, and verified chaos engineering scenarios.
+5. **AI Assistants (`/ai/workflows`, `/ai/operations`)**: Controlled structured DAG authoring and operational triage with stale-action protection and human approval.

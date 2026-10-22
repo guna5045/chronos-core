@@ -1,0 +1,76 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 200,
+      "title": "Worker Fleet Capacity & Health",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "title": "Active Worker Nodes",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_workers_active", "legendFormat": "Active" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "title": "Suspected Workers",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_workers_suspected", "legendFormat": "Suspected" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "title": "Available Execution Slots",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_workers_capacity_available", "legendFormat": "Capacity" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "title": "Worker Evictions Total",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_workers_evicted_total", "legendFormat": "Evicted" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "title": "Heartbeat Frequency & Misses",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(chronos_workers_heartbeats_total[1m])", "legendFormat": "Heartbeats/s" },
+        { "expr": "rate(chronos_workers_heartbeat_misses_total[1m])", "legendFormat": "Misses/s" }
+      ]
+    },
+    {
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "title": "Worker Task Dispatches & Completions",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(chronos_tasks_dispatched_total[1m])", "legendFormat": "Dispatched" },
+        { "expr": "rate(chronos_tasks_completed_total{status=\"SUCCEEDED\"}[1m])", "legendFormat": "Succeeded" },
+        { "expr": "rate(chronos_tasks_completed_total{status=\"FAILED\"}[1m])", "legendFormat": "Failed" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["chronos", "workers", "fleet"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Chronos Core - Worker Fleet",
+  "uid": "chronos-workers"
+}

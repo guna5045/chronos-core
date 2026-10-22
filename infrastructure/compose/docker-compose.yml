@@ -38,6 +38,35 @@ services:
     networks:
       - chronos-network
 
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: chronos-prometheus
+    restart: unless-stopped
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - chronos-network
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: chronos-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=chronos_admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - chronos-network
+
 volumes:
   chronos_pgdata:
     name: chronos_pgdata

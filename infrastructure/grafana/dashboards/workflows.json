@@ -1,0 +1,77 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 400,
+      "title": "Workflow DAG Execution Engine",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "title": "Active Workflow Executions",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_workflows_active_total", "legendFormat": "Active" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "title": "Workflow Success Total",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_workflows_completed_total{status=\"SUCCEEDED\"}", "legendFormat": "Succeeded" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "title": "Workflow Failure Total",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_workflows_completed_total{status=\"FAILED\"}", "legendFormat": "Failed" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "title": "DAG Node Activations / sec",
+      "type": "stat",
+      "targets": [{ "expr": "rate(chronos_workflows_node_activations_total[1m])", "legendFormat": "Nodes/s" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "title": "Workflow Execution Duration (s)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(chronos_workflow_execution_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(chronos_workflow_execution_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(chronos_workflow_execution_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99" }
+      ]
+    },
+    {
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "title": "DAG Node Completion & Failure Rates",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(chronos_workflows_node_activations_total[1m])", "legendFormat": "Activated" },
+        { "expr": "rate(chronos_workflows_node_completions_total{status=\"SUCCEEDED\"}[1m])", "legendFormat": "Node Succeeded" },
+        { "expr": "rate(chronos_workflows_node_completions_total{status=\"FAILED\"}[1m])", "legendFormat": "Node Failed" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["chronos", "workflows", "dag"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Chronos Core - Workflow Engine",
+  "uid": "chronos-workflows"
+}

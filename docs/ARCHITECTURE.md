@@ -856,4 +856,36 @@ Phase 12 introduces two scoped AI capabilities: the **AI Workflow Agent** and th
 7. **Prompt Injection Defense**: Operational data (logs, task payloads) is sanitized and structurally isolated from privileged instructions. Natural language inputs are strictly bounded (4,000 chars max).
 8. **Optional & Isolated**: If `CHRONOS_AI_ENABLED=false`, all core scheduling, execution, recovery, and persistence mechanisms operate at 100% functionality.
 
+---
+
+## 15. Observability, Distributed Tracing & Chaos Engineering (Phase 13)
+
+Phase 13 introduces production observability and chaos fault tolerance verification across Chronos Core:
+
+```text
+Chronos Core (Coordinator / Worker)
+     │
+     ├─────────────── Micrometer Metrics ───────────► Prometheus Actuator (/actuator/prometheus)
+     │                                                         │
+     │                                                         ▼
+     │                                                      Grafana (Dashboards 1-6)
+     │
+     ├─────────────── W3C Trace Context ────────────► OpenTelemetry Bridge
+     │                (REST -> Scheduler -> gRPC)              │
+     │                                                         ▼
+     │                                                    Trace Backend
+     │
+     └─────────────── Structured MDC Logs ──────────► Standard Out / Log Aggregator
+                      (requestId, traceId, tenantId)
+```
+
+### 15.1 Production Observability Features
+- **Micrometer Metric Instrumentation**: Low-cardinality counters, gauges, and timers for task lifecycle, scheduler dispatch cycles, worker fleet health, leader fencing epochs, Redis locks, and workflow executions.
+- **Prometheus Scraper Support**: Actuator endpoint `/actuator/prometheus` exposed with Spring Security permit-all authorization for cluster scrapers.
+- **W3C Distributed Tracing Bridge**: `TraceAndCorrelationFilter` injects `X-Request-Id`, `X-Correlation-Id`, and `X-Trace-Id` into MDC and HTTP response headers. Trace context propagates from REST submission through DB transaction, scheduler lock, gRPC worker dispatch, and execution results.
+- **Six Grafana Dashboards**: Provisioned JSON dashboards for System Overview, Worker Fleet, Scheduler Telemetry, Workflow Engine, Distributed Coordination, and AI Subsystem.
+- **Health Probes**: Distinct `/actuator/health/liveness` (process vitality) and `/actuator/health/readiness` (safe traffic serving with dependency verification).
+- **Chaos Invariant Test Suite**: Verified fault injection tests in `ChaosEngineeringTest` proving that worker crashes, leader lease expiration, database contention, and retry storms preserve data integrity and prevent stale execution.
+
+
 

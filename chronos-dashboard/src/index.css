@@ -1,11 +1,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
+  --theme: 'dark';
   --bg-canvas: #090d16;
   --bg-surface: #0f172a;
   --bg-elevated: #151e34;
   --bg-hover: #1e2942;
   --bg-active: #253352;
+  --bg-muted: #1e293b;
 
   --border-subtle: #1e293b;
   --border-default: #2a3952;
@@ -24,8 +26,45 @@
   --accent-rose: #f43f5e;
   --accent-purple: #a855f7;
 
+  --chart-grid: #1e293b;
+  --chart-text: #64748b;
+  --chart-tooltip-bg: #0f172a;
+  --chart-tooltip-border: #2a3952;
+
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', Consolas, Monaco, monospace;
+}
+
+[data-theme="light"] {
+  --theme: 'light';
+  --bg-canvas: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f1f5f9;
+  --bg-hover: #e2e8f0;
+  --bg-active: #cbd5e1;
+  --bg-muted: #e2e8f0;
+
+  --border-subtle: #e2e8f0;
+  --border-default: #cbd5e1;
+  --border-accent: #0284c7;
+
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-faint: #64748b;
+  --text-inverted: #ffffff;
+
+  --accent-cyan: #0284c7;
+  --accent-blue: #2563eb;
+  --accent-indigo: #4f46e5;
+  --accent-emerald: #059669;
+  --accent-amber: #d97706;
+  --accent-rose: #e11d48;
+  --accent-purple: #9333ea;
+
+  --chart-grid: #e2e8f0;
+  --chart-text: #64748b;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: #cbd5e1;
 }
 
 * {
@@ -42,10 +81,25 @@ body {
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 code, pre, .font-mono {
   font-family: var(--font-mono);
+}
+
+/* Keyframe Animations */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }
 
 /* Custom Scrollbars */
@@ -87,12 +141,12 @@ code, pre, .font-mono {
 }
 
 .btn-primary {
-  background-color: #0284c7;
+  background-color: var(--accent-cyan);
   color: #ffffff;
-  border-color: #0369a1;
+  border-color: var(--accent-cyan);
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: #0369a1;
+  opacity: 0.9;
 }
 
 .btn-secondary {
@@ -107,7 +161,7 @@ code, pre, .font-mono {
 
 .btn-danger {
   background-color: rgba(244, 63, 94, 0.12);
-  color: #fda4af;
+  color: var(--accent-rose);
   border-color: rgba(244, 63, 94, 0.4);
 }
 .btn-danger:hover:not(:disabled) {
@@ -117,7 +171,7 @@ code, pre, .font-mono {
 
 .btn-success {
   background-color: rgba(16, 185, 129, 0.12);
-  color: #6ee7b7;
+  color: var(--accent-emerald);
   border-color: rgba(16, 185, 129, 0.4);
 }
 .btn-success:hover:not(:disabled) {

@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: chronos-coordinator-dev
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:h2:mem:chronos_dev;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ''
+  flyway:
+    enabled: true
+    locations: classpath:db/migration-h2
+    baseline-on-migrate: true
+    validate-on-migrate: false
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+chronos:
+  coordination:
+    enabled: false
+  coordinator:
+    grpc:
+      enabled: false
+      port: 0
+    cluster:
+      enabled: false
+  scheduler:
+    enabled: false
+  recovery:
+    enabled: false
+  retry:
+    enabled: true
+  security:
+    enabled: true
+    jwt-secret: chronos-core-distributed-orchestration-dev-secret-key-32bytes-minimum
+    issuer: chronos-core
+    token-validity-seconds: 86400
+  ai:
+    enabled: true
+    provider: STUB
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        chronos: true
+
+logging:
+  level:
+    root: INFO
+    com.chronoscore: INFO

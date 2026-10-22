@@ -43,15 +43,27 @@ public class TaskController {
     private final TaskRepository taskRepository;
     private final DlqService dlqService;
     private final TenantSecurityContext securityContext;
+    private final com.chronoscore.coordinator.observability.ChronosMetricsService metricsService;
 
     public TaskController(TransactionalTaskService taskService,
                           TaskRepository taskRepository,
                           DlqService dlqService,
                           TenantSecurityContext securityContext) {
+        this(taskService, taskRepository, dlqService, securityContext, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TaskController(TransactionalTaskService taskService,
+                          TaskRepository taskRepository,
+                          DlqService dlqService,
+                          TenantSecurityContext securityContext,
+                          @org.springframework.beans.factory.annotation.Autowired(required = false)
+                          com.chronoscore.coordinator.observability.ChronosMetricsService metricsService) {
         this.taskService = Objects.requireNonNull(taskService, "taskService must not be null");
         this.taskRepository = Objects.requireNonNull(taskRepository, "taskRepository must not be null");
         this.dlqService = Objects.requireNonNull(dlqService, "dlqService must not be null");
         this.securityContext = Objects.requireNonNull(securityContext, "securityContext must not be null");
+        this.metricsService = metricsService;
     }
 
     @PostMapping
@@ -95,6 +107,9 @@ public class TaskController {
 
         String clientInfo = "user=" + securityContext.getUsername();
         Task persisted = taskService.submitTask(task, clientInfo, "api=rest-v1");
+        if (metricsService != null) {
+            metricsService.recordTaskSubmitted(persisted.getTaskType());
+        }
 
         boolean isNew = persisted.getTaskId().equals(taskId);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
@@ -159,6 +174,9 @@ public class TaskController {
                 : "Operator triggered task retry via REST";
 
         Task replayed = dlqService.replayTask(taskId, reason);
+        if (metricsService != null) {
+            metricsService.recordTaskRetried(replayed.getTaskType());
+        }
         return ResponseEntity.ok(TaskResponse.from(replayed));
     }
 

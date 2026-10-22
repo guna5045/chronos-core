@@ -75,8 +75,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // Endpoint authorization rules
                 .authorizeHttpRequests(auth -> auth
-                        // Safe Actuator health/readiness endpoints
-                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        // Safe Actuator health, readiness, and prometheus scraping endpoints
+                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info", "/actuator/prometheus", "/actuator/metrics", "/actuator/metrics/**").permitAll()
                         // Dev token endpoint for testing/local setups
                         .requestMatchers("/api/v1/auth/**").permitAll()
 

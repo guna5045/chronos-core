@@ -252,15 +252,21 @@ export interface ApiErrorResponse {
   code: string;
   message: string;
   path: string;
+  error?: string;
+  requestId?: string;
+  traceId?: string;
+  details?: string[];
   fieldErrors?: Record<string, string>;
 }
 
 export interface AuthTokenResponse {
-  token: string;
-  tokenType: string;
-  expiresInSeconds: number;
-  roles: string[];
-  tenantId: string;
+  token?: string;
+  accessToken?: string;
+  tokenType?: string;
+  expiresIn?: number;
+  expiresInSeconds?: number;
+  roles?: string[];
+  tenantId?: string;
 }
 
 // AI Types

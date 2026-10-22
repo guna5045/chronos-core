@@ -1,0 +1,77 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 300,
+      "title": "Deterministic Scheduler Telemetry",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "title": "Dispatch Cycles / sec",
+      "type": "stat",
+      "targets": [{ "expr": "rate(chronos_scheduler_polls_total[1m])", "legendFormat": "Polls/s" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "title": "Admission Rejections",
+      "type": "stat",
+      "targets": [{ "expr": "rate(chronos_scheduler_rejections_total[1m])", "legendFormat": "Rejections/s" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "title": "Lock Acquisition Failures",
+      "type": "stat",
+      "targets": [{ "expr": "rate(chronos_coordination_lock_failed_total[1m])", "legendFormat": "Failures/s" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "title": "Deadlines Exceeded",
+      "type": "stat",
+      "targets": [{ "expr": "rate(chronos_tasks_timeout_total[1m])", "legendFormat": "Timeouts/s" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "title": "Scheduler Dispatch Latency (ms)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(chronos_task_dispatch_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P50 (ms)" },
+        { "expr": "histogram_quantile(0.95, sum(rate(chronos_task_dispatch_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P95 (ms)" },
+        { "expr": "histogram_quantile(0.99, sum(rate(chronos_task_dispatch_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P99 (ms)" }
+      ]
+    },
+    {
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "title": "Task Queue Wait Time (ms)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(chronos_task_queue_wait_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P50 (ms)" },
+        { "expr": "histogram_quantile(0.95, sum(rate(chronos_task_queue_wait_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P95 (ms)" },
+        { "expr": "histogram_quantile(0.99, sum(rate(chronos_task_queue_wait_seconds_bucket[5m])) by (le)) * 1000", "legendFormat": "P99 (ms)" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["chronos", "scheduler"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Chronos Core - Scheduler Telemetry",
+  "uid": "chronos-scheduler"
+}

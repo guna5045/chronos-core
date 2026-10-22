@@ -1,0 +1,75 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 500,
+      "title": "Redis Lease Coordination & Distributed Locking",
+      "type": "row"
+    },
+    {
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "title": "Leader Lease Acquired Total",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_leader_acquired_total", "legendFormat": "Acquired" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "title": "Leader Lease Lost Total",
+      "type": "stat",
+      "targets": [{ "expr": "chronos_leader_lost_total", "legendFormat": "Lost" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "title": "Distributed Lock Attempts / sec",
+      "type": "stat",
+      "targets": [{ "expr": "rate(chronos_coordination_lock_attempts_total[1m])", "legendFormat": "Attempts/s" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "title": "Coordination Lock Failures / sec",
+      "type": "stat",
+      "targets": [{ "expr": "rate(chronos_coordination_lock_failed_total[1m])", "legendFormat": "Failures/s" }],
+      "options": { "colorMode": "value", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "title": "Leader Fencing Epoch Progression",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "chronos_leader_epoch", "legendFormat": "Epoch" }
+      ]
+    },
+    {
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "title": "Lock Acquisition & Renewal Throughput",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(chronos_coordination_lock_attempts_total[1m])", "legendFormat": "Attempts" },
+        { "expr": "rate(chronos_coordination_lock_acquired_total[1m])", "legendFormat": "Acquired" },
+        { "expr": "rate(chronos_coordination_lock_failed_total[1m])", "legendFormat": "Failed" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["chronos", "coordination", "redis", "leader"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Chronos Core - Distributed Coordination",
+  "uid": "chronos-coordination"
+}

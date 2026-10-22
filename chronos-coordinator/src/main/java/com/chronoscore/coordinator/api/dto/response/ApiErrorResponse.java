@@ -19,15 +19,21 @@ public record ApiErrorResponse(
         String code,
         String message,
         String path,
+        String requestId,
+        String traceId,
         List<String> details
 ) {
 
     public ApiErrorResponse(int status, String error, String code, String message, String path) {
-        this(Instant.now(), status, error, code, message, path, Collections.emptyList());
+        this(Instant.now(), status, error, code, message, path, null, null, Collections.emptyList());
     }
 
     public ApiErrorResponse(int status, String error, String code, String message, String path, List<String> details) {
-        this(Instant.now(), status, error, code, message, path, details != null ? details : Collections.emptyList());
+        this(Instant.now(), status, error, code, message, path, null, null, details != null ? details : Collections.emptyList());
+    }
+
+    public ApiErrorResponse(int status, String error, String code, String message, String path, String requestId, String traceId, List<String> details) {
+        this(Instant.now(), status, error, code, message, path, requestId, traceId, details != null ? details : Collections.emptyList());
     }
 
     public static ApiErrorResponse of(int status, String error, String code, String message, String path) {
@@ -36,5 +42,9 @@ public record ApiErrorResponse(
 
     public static ApiErrorResponse of(int status, String error, String code, String message, String path, List<String> details) {
         return new ApiErrorResponse(status, error, code, message, path, details);
+    }
+
+    public static ApiErrorResponse of(int status, String error, String code, String message, String path, String requestId, String traceId, List<String> details) {
+        return new ApiErrorResponse(status, error, code, message, path, requestId, traceId, details);
     }
 }

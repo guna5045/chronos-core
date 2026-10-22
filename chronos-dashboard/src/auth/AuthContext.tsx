@@ -26,7 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<AuthUser | null>(() => {
     const savedToken = localStorage.getItem('chronos_auth_token');
     const savedUser = localStorage.getItem('chronos_auth_user');
-    if (savedToken && savedUser) {
+    if (savedToken && savedToken !== 'undefined' && savedToken !== 'null' && savedUser) {
       try {
         const parsed = JSON.parse(savedUser);
         return { ...parsed, token: savedToken };
@@ -34,11 +34,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem('chronos_auth_token');
         localStorage.removeItem('chronos_auth_user');
       }
+    } else if (savedToken === 'undefined' || savedToken === 'null') {
+      localStorage.removeItem('chronos_auth_token');
+      localStorage.removeItem('chronos_auth_user');
     }
     return null;
   });
 
   const login = (token: string, subject: string, roles: string[], tenantId: string) => {
+    if (!token || token === 'undefined' || token === 'null') {
+      return;
+    }
     const authUser: AuthUser = { subject, roles, tenantId, token };
     localStorage.setItem('chronos_auth_token', token);
     localStorage.setItem('chronos_auth_user', JSON.stringify({ subject, roles, tenantId }));

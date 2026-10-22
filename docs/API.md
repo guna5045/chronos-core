@@ -551,3 +551,29 @@ Response:
 }
 ```
 
+---
+
+## 11. Observability, Health & Telemetry Endpoints (Phase 13)
+
+### Correlation Headers (All Endpoints)
+- **`X-Request-Id`**: Caller-supplied or coordinator-generated unique request tracking ID. Echoed in all responses and logged in MDC.
+- **`X-Correlation-Id`**: Cross-system correlation identifier.
+- **`X-Trace-Id`**: Active OpenTelemetry trace context span ID.
+
+### GET `/actuator/prometheus`
+Exposes full Prometheus metric scrape output containing all Micrometer meters (counters, gauges, distribution summaries, histograms).
+- **Security**: Publicly accessible to cluster metric scrapers.
+
+### GET `/actuator/health`
+Overall application health status.
+- **Response**: `{"status": "UP"}`
+
+### GET `/actuator/health/liveness`
+Kubernetes/process liveness probe. Indicates if coordinator event loop is executing.
+- **Response**: `{"status": "UP"}`
+
+### GET `/actuator/health/readiness`
+Readiness probe. Verifies database and Redis availability to safely accept new traffic.
+- **Response**: `{"status": "UP"}`
+
+

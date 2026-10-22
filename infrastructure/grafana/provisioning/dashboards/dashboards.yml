@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: 'Chronos Dashboards'
+    orgId: 1
+    folder: 'Chronos Core'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

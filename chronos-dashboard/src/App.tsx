@@ -20,6 +20,7 @@ import { ClusterPage } from './pages/ClusterPage';
 import { TenantPolicyPage } from './pages/TenantPolicyPage';
 import { AiWorkflowsPage } from './pages/AiWorkflowsPage';
 import { AiOperationsPage } from './pages/AiOperationsPage';
+import { ObservabilityPage } from './pages/ObservabilityPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,6 +68,7 @@ export const App: React.FC = () => {
                 path="tenants"
                 element={<Navigate to="/tenants/tenant-alpha/policy" replace />}
               />
+              <Route path="observability" element={<ObservabilityPage />} />
               <Route path="ai/workflows" element={<AiWorkflowsPage />} />
               <Route path="ai/operations" element={<AiOperationsPage />} />
             </Route>

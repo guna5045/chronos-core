@@ -25,23 +25,46 @@ public class DevAuthController {
 
     public record TokenRequest(
             String username,
+            String subject,
             String tenantId,
             List<String> roles
-    ) {}
+    ) {
+        public String effectiveUsername() {
+            if (subject != null && !subject.isBlank()) {
+                return subject.trim();
+            }
+            if (username != null && !username.isBlank()) {
+                return username.trim();
+            }
+            return "dev-user";
+        }
+    }
 
     public record TokenResponse(
             String accessToken,
+            String token,
             String tokenType,
-            long expiresIn
-    ) {}
+            long expiresIn,
+            long expiresInSeconds,
+            List<String> roles,
+            String tenantId
+    ) {
+        public TokenResponse(String token, String tokenType, long expiresIn, List<String> roles, String tenantId) {
+            this(token, token, tokenType, expiresIn, expiresIn, roles, tenantId);
+        }
+    }
 
     @PostMapping("/token")
-    public ResponseEntity<TokenResponse> issueToken(@RequestBody TokenRequest request) {
-        String username = request.username() != null && !request.username().isBlank() ? request.username() : "dev-user";
-        String tenantId = request.tenantId() != null && !request.tenantId().isBlank() ? request.tenantId() : "default";
-        List<String> roles = request.roles() != null && !request.roles().isEmpty() ? request.roles() : List.of("VIEWER");
+    public ResponseEntity<TokenResponse> issueToken(@RequestBody(required = false) TokenRequest request) {
+        String username = request != null ? request.effectiveUsername() : "dev-user";
+        String tenantId = request != null && request.tenantId() != null && !request.tenantId().isBlank()
+                ? request.tenantId().trim()
+                : "default";
+        List<String> roles = request != null && request.roles() != null && !request.roles().isEmpty()
+                ? request.roles()
+                : List.of("VIEWER");
 
         String token = tokenHelper.generateToken(username, tenantId, roles);
-        return ResponseEntity.ok(new TokenResponse(token, "Bearer", 3600));
+        return ResponseEntity.ok(new TokenResponse(token, "Bearer", 86400, roles, tenantId));
     }
 }

@@ -27,11 +27,17 @@ export const LoginPage: React.FC = () => {
     try {
       const response = await requestDevToken({
         subject: subject.trim(),
+        username: subject.trim(),
         roles: [selectedRole],
         tenantId: tenantId.trim(),
       });
 
-      login(response.token, subject.trim(), [selectedRole], tenantId.trim());
+      const authToken = response.token || response.accessToken;
+      if (!authToken) {
+        throw new Error('Authentication gateway returned an empty token.');
+      }
+
+      login(authToken, subject.trim(), [selectedRole], tenantId.trim());
       navigate(from, { replace: true });
     } catch (err) {
       if (err instanceof ApiClientError) {
