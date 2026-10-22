@@ -65,9 +65,13 @@
         </dependency>
     </dependencies>
 
+    <properties>
+        <exe.ext></exe.ext>
+    </properties>
+
     <build>
         <plugins>
-            <!-- 1. Resolve & extract protoc executable and standard google/protobuf proto definitions -->
+            <!-- 1. Resolve & extract OS-specific protoc binary, gRPC compiler plugin, and standard google/protobuf proto definitions -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
@@ -88,7 +92,7 @@
                                     <classifier>${os.detected.classifier}</classifier>
                                     <type>exe</type>
                                     <outputDirectory>${project.build.directory}/protoc-bin</outputDirectory>
-                                    <destFileName>protoc.exe</destFileName>
+                                    <destFileName>protoc${exe.ext}</destFileName>
                                 </artifactItem>
                                 <artifactItem>
                                     <groupId>io.grpc</groupId>
@@ -97,7 +101,7 @@
                                     <classifier>${os.detected.classifier}</classifier>
                                     <type>exe</type>
                                     <outputDirectory>${project.build.directory}/protoc-bin</outputDirectory>
-                                    <destFileName>protoc-gen-grpc-java.exe</destFileName>
+                                    <destFileName>protoc-gen-grpc-java${exe.ext}</destFileName>
                                 </artifactItem>
                             </artifactItems>
                         </configuration>
@@ -124,7 +128,7 @@
                 </executions>
             </plugin>
 
-            <!-- 2. Execute protoc using relative paths to ensure Unicode/Windows path safety -->
+            <!-- 2. Execute protoc using relative paths to ensure cross-platform compatibility and Unicode path safety -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
@@ -140,10 +144,10 @@
                             <target>
                                 <mkdir dir="${project.build.directory}/generated-sources/protobuf/java"/>
                                 <mkdir dir="${project.build.directory}/generated-sources/protobuf/grpc-java"/>
-                                <echo file="${project.build.directory}/protoc-args.txt">-Isrc/main/proto${line.separator}-Itarget/protoc-include${line.separator}--java_out=target/generated-sources/protobuf/java${line.separator}--plugin=protoc-gen-grpc-java=target/protoc-bin/protoc-gen-grpc-java.exe${line.separator}--grpc-java_out=target/generated-sources/protobuf/grpc-java${line.separator}src/main/proto/chronos_task_execution.proto${line.separator}</echo>
-                                <chmod file="${project.build.directory}/protoc-bin/protoc.exe" perm="755"/>
-                                <chmod file="${project.build.directory}/protoc-bin/protoc-gen-grpc-java.exe" perm="755"/>
-                                <exec executable="${project.build.directory}/protoc-bin/protoc.exe" failonerror="true">
+                                <echo file="${project.build.directory}/protoc-args.txt">-Isrc/main/proto${line.separator}-Itarget/protoc-include${line.separator}--java_out=target/generated-sources/protobuf/java${line.separator}--plugin=protoc-gen-grpc-java=target/protoc-bin/protoc-gen-grpc-java${exe.ext}${line.separator}--grpc-java_out=target/generated-sources/protobuf/grpc-java${line.separator}src/main/proto/chronos_task_execution.proto${line.separator}</echo>
+                                <chmod file="${project.build.directory}/protoc-bin/protoc${exe.ext}" perm="755"/>
+                                <chmod file="${project.build.directory}/protoc-bin/protoc-gen-grpc-java${exe.ext}" perm="755"/>
+                                <exec executable="${project.build.directory}/protoc-bin/protoc${exe.ext}" failonerror="true">
                                     <arg value="@target/protoc-args.txt"/>
                                 </exec>
                             </target>
@@ -175,4 +179,18 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>os-windows</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <properties>
+                <exe.ext>.exe</exe.ext>
+            </properties>
+        </profile>
+    </profiles>
 </project>

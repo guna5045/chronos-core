@@ -1,5 +1,5 @@
 # Stage 1: Build Chronos Worker
-FROM maven:3.9.9-eclipse-temurin-21-alpine AS builder
+FROM maven:3.9.9-eclipse-temurin-21 AS builder
 WORKDIR /workspace
 
 COPY pom.xml ./
