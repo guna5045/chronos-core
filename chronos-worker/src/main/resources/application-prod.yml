@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: chronos-worker
+  threads:
+    virtual:
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
+
+server:
+  port: ${CHRONOS_WORKER_MANAGEMENT_PORT:8081}
+  shutdown: graceful
+
+chronos:
+  worker:
+    enabled: true
+    id: ${CHRONOS_WORKER_ID:worker-1}
+    hostname: ${CHRONOS_WORKER_HOSTNAME:chronos-worker}
+    port: ${CHRONOS_WORKER_PORT:9091}
+    max-concurrency: ${CHRONOS_WORKER_MAX_CONCURRENCY:8}
+    coordinator-host: ${CHRONOS_COORDINATOR_HOST:chronos-coordinator}
+    coordinator-port: ${CHRONOS_COORDINATOR_PORT:9090}
+    heartbeat:
+      interval: ${CHRONOS_WORKER_HEARTBEAT_INTERVAL:1000ms}
+
+logging:
+  level:
+    root: INFO
+    com.chronoscore: INFO
+    io.grpc: INFO

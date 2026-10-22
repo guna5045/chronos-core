@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chronos-core
+  labels:
+    app.kubernetes.io/name: chronos-core
+    app.kubernetes.io/part-of: chronos-platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chronos-config
+  namespace: chronos-core
+data:
+  SPRING_PROFILES_ACTIVE: "prod"
+  CHRONOS_DB_HOST: "postgres"
+  CHRONOS_DB_PORT: "5432"
+  CHRONOS_DB_NAME: "chronos_core"
+  CHRONOS_DB_URL: "jdbc:postgresql://postgres.chronos-core.svc.cluster.local:5432/chronos_core"
+  CHRONOS_REDIS_HOST: "redis.chronos-core.svc.cluster.local"
+  CHRONOS_REDIS_PORT: "6379"
+  CHRONOS_COORDINATOR_PORT: "8080"
+  CHRONOS_COORDINATOR_GRPC_PORT: "9090"
+  CHRONOS_COORDINATOR_HOST: "chronos-coordinator.chronos-core.svc.cluster.local"
+  CHRONOS_AI_ENABLED: "false"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chronos-secrets
+  namespace: chronos-core
+type: Opaque
+stringData:
+  CHRONOS_DB_USERNAME: "chronos_user"
+  CHRONOS_DB_PASSWORD: "change-in-production-strong-password"
+  CHRONOS_JWT_SECRET: "chronos-core-distributed-orchestration-dev-secret-key-32bytes-minimum"

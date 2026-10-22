@@ -1,0 +1,125 @@
+spring:
+  application:
+    name: chronos-coordinator
+  threads:
+    virtual:
+      enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    url: ${CHRONOS_DB_URL:jdbc:postgresql://postgres:5432/chronos_core}
+    username: ${CHRONOS_DB_USERNAME:chronos_user}
+    password: ${CHRONOS_DB_PASSWORD:chronos_dev_pass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      pool-name: ChronosCoordinatorProdHikariCP
+      maximum-pool-size: ${CHRONOS_DB_POOL_MAX:20}
+      minimum-idle: ${CHRONOS_DB_POOL_MIN_IDLE:5}
+      idle-timeout: 300000
+      connection-timeout: 10000
+      validation-timeout: 3000
+      leak-detection-threshold: 30000
+      max-lifetime: 1200000
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+  data:
+    redis:
+      host: ${CHRONOS_REDIS_HOST:redis}
+      port: ${CHRONOS_REDIS_PORT:6379}
+      password: ${CHRONOS_REDIS_PASSWORD:}
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 2000ms
+
+server:
+  port: ${CHRONOS_COORDINATOR_PORT:8080}
+  shutdown: graceful
+
+chronos:
+  coordination:
+    enabled: true
+    coordinator-id: ${CHRONOS_COORDINATOR_ID:coordinator-node-1}
+    leader-lease-duration: ${CHRONOS_LEADER_LEASE_DURATION:5s}
+    leader-renewal-interval: ${CHRONOS_LEADER_RENEWAL_INTERVAL:1500ms}
+    task-lock-ttl: ${CHRONOS_TASK_LOCK_TTL:30s}
+  coordinator:
+    grpc:
+      enabled: true
+      port: ${CHRONOS_COORDINATOR_GRPC_PORT:9090}
+    cluster:
+      enabled: true
+      heartbeat-timeout: ${CHRONOS_WORKER_HEARTBEAT_TIMEOUT:3s}
+      eviction-timeout: ${CHRONOS_WORKER_EVICTION_TIMEOUT:6s}
+      health-check-interval: ${CHRONOS_WORKER_HEALTH_CHECK_INTERVAL:1s}
+  scheduler:
+    enabled: true
+    poll-interval-ms: ${CHRONOS_SCHEDULER_POLL_INTERVAL_MS:100}
+    batch-size: ${CHRONOS_SCHEDULER_BATCH_SIZE:50}
+    dispatch-timeout: ${CHRONOS_SCHEDULER_DISPATCH_TIMEOUT:5s}
+    task-lock-ttl: ${CHRONOS_SCHEDULER_LOCK_TTL:30s}
+    aging-threshold: ${CHRONOS_SCHEDULER_AGING_THRESHOLD:30s}
+    starvation-batch-ratio: ${CHRONOS_SCHEDULER_STARVATION_RATIO:0.2}
+  distribution:
+    virtual-nodes-per-worker: ${CHRONOS_DISTRIBUTION_VNODES:128}
+  lease:
+    duration: ${CHRONOS_LEASE_DURATION:30s}
+    renewal-interval: ${CHRONOS_LEASE_RENEWAL_INTERVAL:10s}
+  retry:
+    enabled: true
+    base-delay: ${CHRONOS_RETRY_BASE_DELAY:1s}
+    max-delay: ${CHRONOS_RETRY_MAX_DELAY:60s}
+    multiplier: 2.0
+    jitter: true
+  recovery:
+    enabled: true
+    poll-interval: ${CHRONOS_RECOVERY_POLL_INTERVAL:1s}
+    batch-size: 50
+  security:
+    enabled: true
+    jwt-secret: ${CHRONOS_JWT_SECRET}
+    issuer: ${CHRONOS_JWT_ISSUER:chronos-core}
+    token-validity-seconds: ${CHRONOS_JWT_VALIDITY:3600}
+    cors:
+      allowed-origins: ${CHRONOS_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:80,http://chronos-dashboard}
+  ai:
+    enabled: ${CHRONOS_AI_ENABLED:false}
+    provider: ${CHRONOS_AI_PROVIDER:STUB}
+    api-key: ${CHRONOS_AI_API_KEY:}
+    endpoint: ${CHRONOS_AI_ENDPOINT:}
+    model: ${CHRONOS_AI_MODEL:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+    prometheus:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      env: prod
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        chronos: true
+
+logging:
+  level:
+    root: INFO
+    com.chronoscore: INFO
+    org.flywaydb: INFO
+    org.springframework.security: WARN
+    io.grpc: INFO

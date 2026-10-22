@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chronos-worker
+  namespace: chronos-core
+  labels:
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: worker
+    spec:
+      containers:
+        - name: worker
+          image: chronoscore/worker:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: management
+              containerPort: 8081
+            - name: grpc
+              containerPort: 9091
+          env:
+            - name: CHRONOS_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: CHRONOS_WORKER_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          envFrom:
+            - configMapRef:
+                name: chronos-config
+            - secretRef:
+                name: chronos-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
