@@ -24,60 +24,54 @@ In strict accordance with the Chronos Core Engineering Rules:
 
 ---
 
-## 3. Container & Testcontainers Execution Status
+## 3. Environment & Infrastructure Execution Status
 
 | Component | Status | Execution Details |
 |---|---|---|
-| **Docker Daemon** | `AVAILABLE` | Docker Engine running locally |
-| **PostgreSQL Testcontainers** | `EXECUTED / COMPATIBLE` | Flyway V1-V12 schema migrations verified |
-| **Redis Testcontainers** | `EXECUTED / COMPATIBLE` | Lettuce Redis connection and distributed locks verified |
-| **Toxiproxy Fault Injection** | `CONFIGURED` | Network-fault latency tests codified |
+| **Docker Daemon** | `ENVIRONMENT LIMITED` | Docker CLI not available on host PATH; compose/container files configured |
+| **PostgreSQL Schema** | `VERIFIED` | Flyway V1-V12 schema migrations verified in integration tests |
+| **Redis Coordination** | `VERIFIED` | Redis lease leader election and distributed locks verified in unit/integration tests |
+| **Toxiproxy Fault Injection** | `CONFIGURED` | Network-fault latency scripts codified in `benchmark/` |
 | **Prometheus Scraper** | `CONFIGURED` | Actuator scrape configuration deployed in `infrastructure/prometheus/prometheus.yml` |
-| **Grafana Dashboards** | `PROVISIONED` | 6 JSON dashboard models loaded in `infrastructure/grafana/dashboards/` |
-| **OpenTelemetry Bridge** | `CONFIGURED` | `micrometer-tracing-bridge-otel` active in Coordinator |
+| **Grafana Dashboards** | `IMPLEMENTED` | 6 JSON dashboard models loaded in `infrastructure/grafana/dashboards/` |
+| **OpenTelemetry Bridge** | `IMPLEMENTED` | `micrometer-tracing-bridge-otel` active in Coordinator |
 
 ---
 
-## 4. Benchmark Scenario Results
+## 4. Benchmark Scenario Status & Verification
 
-### Scenario A — Task Submission Burst (k6 `benchmark/k6/task_submission.js`)
-- **Objective**: Measure REST API submission throughput, admission control latency, and database transaction commit overhead.
-- **Target Concurrency**: 50 Virtual Users (VUs)
-- **Duration**: 50 seconds (10s ramp-up, 30s steady state, 10s cooldown)
-- **Measured Result**:
-  - **Throughput**: ~480 - 620 requests/sec (local dev JVM)
-  - **P50 Latency**: 12.4 ms
-  - **P95 Latency**: 38.6 ms
-  - **P99 Latency**: 74.2 ms
-  - **HTTP Error Rate**: 0.00%
-  - **State Integrity**: All tasks created in `CREATED` or `QUEUED` with zero missing IDs.
+In accordance with Section 8 of the Phase 13 Closure instructions, production-scale latency percentiles and throughput claims are designated **NOT MEASURED** until formal execution on an isolated benchmark cluster.
 
-### Scenario B — Mixed Task Lifecycle (k6 `benchmark/k6/mixed_execution.js`)
-- **Objective**: Evaluate simultaneous task creation, detail lookup, and cluster status telemetry.
-- **Target Concurrency**: 30 VUs
-- **Duration**: 50 seconds
-- **Measured Result**:
-  - **Throughput**: ~310 requests/sec
-  - **P50 Latency**: 14.1 ms
-  - **P95 Latency**: 42.0 ms
-  - **P99 Latency**: 86.5 ms
-  - **HTTP Error Rate**: 0.00%
+### Scenario A — Task Submission Burst (`benchmark/k6/task_submission.js`)
+- **Status**: `NOT MEASURED`
+- **Harness**: `IMPLEMENTED` (50 VUs, 50s duration)
+- **Measured Metrics**:
+  - **Throughput**: `NOT MEASURED`
+  - **P50 Latency**: `NOT MEASURED`
+  - **P95 Latency**: `NOT MEASURED`
+  - **P99 Latency**: `NOT MEASURED`
+  - **State Integrity**: `VERIFIED` (Zero orphaned task IDs; admission validation verified via integration tests)
 
-### Scenario C — Multi-Tenant Concurrency & Rate Limiting (k6 `benchmark/k6/concurrent_tenants.js`)
-- **Objective**: Verify tenant rate limiting and token-bucket admission boundaries under pressure.
-- **Target Concurrency**: 40 VUs across 4 tenant partitions (`tenant-alpha`, `tenant-beta`, `tenant-gamma`, `tenant-delta`)
-- **Measured Result**:
-  - **Tenant Fair Queuing**: Even distribution across non-rate-limited tenants
-  - **HTTP 429 Status**: Rate-limited requests received structured 429 response without coordinator degradation.
+### Scenario B — Mixed Task Lifecycle (`benchmark/k6/mixed_execution.js`)
+- **Status**: `NOT MEASURED`
+- **Harness**: `IMPLEMENTED` (30 VUs, 50s duration)
+- **Measured Metrics**:
+  - **Throughput**: `NOT MEASURED`
+  - **P50 Latency**: `NOT MEASURED`
+  - **P95 Latency**: `NOT MEASURED`
+  - **P99 Latency**: `NOT MEASURED`
 
-### Scenario D — Workflow DAG Orchestration (k6 `benchmark/k6/workflow_execution.js`)
-- **Objective**: Measure workflow template compilation, DAG node state tracking, and dependency fan-out.
-- **Target Concurrency**: 15 VUs
-- **Measured Result**:
-  - **P50 Latency**: 18.2 ms
-  - **P95 Latency**: 56.4 ms
-  - **P99 Latency**: 112.0 ms
-  - **State Invariants**: Zero orphan or duplicate node executions.
+### Scenario C — Multi-Tenant Concurrency & Rate Limiting (`benchmark/k6/concurrent_tenants.js`)
+- **Status**: `NOT MEASURED`
+- **Harness**: `IMPLEMENTED` (40 VUs across 4 tenant partitions)
+- **Verified Behavior**: `VERIFIED` (Deterministic 429 `TENANT_RATE_EXCEEDED` responses and concurrency caps verified in `TenantAdmissionPolicyTest`)
+
+### Scenario D — Workflow DAG Orchestration (`benchmark/k6/workflow_execution.js`)
+- **Status**: `NOT MEASURED`
+- **Harness**: `IMPLEMENTED` (15 VUs, multi-node dependency graphs)
+- **Measured Metrics**:
+  - **Throughput / Latency**: `NOT MEASURED`
+  - **State Invariants**: `VERIFIED` (Zero duplicate activations or orphan nodes; cycle rejection verified)
 
 ---
 

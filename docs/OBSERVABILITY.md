@@ -3,26 +3,33 @@
 ## 1. Overview & Architecture Boundary
 
 Observability in Chronos Core is designed around the **Three Pillars of Observability**:
-1. **Metrics**: Micrometer instrumentation exported via Prometheus Actuator (`/actuator/prometheus`).
-2. **Distributed Tracing**: OpenTelemetry bridge with W3C Trace Context propagation across REST, MDC, and gRPC.
-3. **Structured Logging**: Consistent JSON-ready operational logs enriched with `requestId`, `traceId`, `spanId`, `tenantId`, and `errorCode`.
+1. **Metrics** (`IMPLEMENTED` / `VERIFIED`): Micrometer instrumentation exported via Prometheus Actuator (`/actuator/prometheus`).
+2. **Distributed Tracing & Correlation** (`IMPLEMENTED` / `VERIFIED` in-process; `PARTIAL / OPTIONAL` external collector): OpenTelemetry bridge with W3C Trace Context and MDC correlation across REST, Scheduler, and gRPC metadata headers.
+3. **Structured Logging** (`IMPLEMENTED` / `VERIFIED`): Consistent operational logs enriched with `requestId`, `traceId`, `spanId`, `tenantId`, and `errorCode`.
 
 ```text
 Chronos Core (Coordinator / Worker)
      │
-     ├─────────────── Micrometer Metrics ───────────► Prometheus Actuator (/actuator/prometheus)
+     ├─────────────── Micrometer Metrics ───────────► Prometheus Actuator (/actuator/prometheus) [VERIFIED]
      │                                                         │
      │                                                         ▼
-     │                                                      Grafana (Dashboards 1-6)
+     │                                                      Grafana (Dashboards 1-6) [CONFIGURED]
      │
-     ├─────────────── W3C Trace Context ────────────► OpenTelemetry Bridge
-     │                (REST -> Scheduler -> gRPC)              │
-     │                                                         ▼
-     │                                                    Trace Backend
+     ├─────────────── W3C Trace Context ────────────► OpenTelemetry Bridge [PARTIAL / OPTIONAL]
+     │                (REST -> Scheduler -> gRPC)              │ (Correlation headers verified;
+     │                                                         ▼  external collector optional)
+     │                                                    Trace Collector / Jaeger
      │
-     └─────────────── Structured MDC Logs ──────────► Standard Out / Log Aggregator
+     └─────────────── Structured MDC Logs ──────────► Standard Out / Log Aggregator [VERIFIED]
                       (requestId, traceId, tenantId)
 ```
+
+### Capability Verification Status
+- **Low-Cardinality Metrics**: `IMPLEMENTED` & `VERIFIED` (Micrometer + Prometheus Actuator).
+- **Liveness & Readiness Probes**: `IMPLEMENTED` & `VERIFIED` (`/actuator/health/liveness`, `/actuator/health/readiness`).
+- **Trace Context & Correlation**: `IMPLEMENTED` & `VERIFIED` (MDC injection, `X-Request-Id`, `X-Trace-Id`, gRPC metadata).
+- **External OpenTelemetry Collector**: `OPTIONAL` (Collector not bundled in local environment).
+- **Grafana Provisioning**: `IMPLEMENTED` (6 dashboard JSON models in `infrastructure/grafana/dashboards/`).
 
 ---
 
