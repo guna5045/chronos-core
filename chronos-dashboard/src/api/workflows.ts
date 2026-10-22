@@ -3,14 +3,19 @@ import {
   CreateWorkflowRequest,
   CreateWorkflowVersionRequest,
   ExecuteWorkflowRequest,
+  PagedResponse,
   WorkflowDefinitionResponse,
   WorkflowExecutionDetailsResponse,
   WorkflowExecutionResponse,
   WorkflowVersionResponse,
 } from './types';
 
-export async function getWorkflows(): Promise<WorkflowDefinitionResponse[]> {
-  return request<WorkflowDefinitionResponse[]>('/workflows');
+export async function getWorkflows(params: { page?: number; size?: number } = {}): Promise<PagedResponse<WorkflowDefinitionResponse>> {
+  const query = new URLSearchParams();
+  if (params.page !== undefined) query.set('page', params.page.toString());
+  if (params.size !== undefined) query.set('size', params.size.toString());
+  const queryString = query.toString();
+  return request<PagedResponse<WorkflowDefinitionResponse>>(`/workflows${queryString ? `?${queryString}` : ''}`);
 }
 
 export async function getWorkflow(workflowId: string): Promise<WorkflowDefinitionResponse> {

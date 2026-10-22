@@ -2,29 +2,46 @@ import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { createWorkflow, getWorkflows } from '../api/workflows';
-import { CreateWorkflowRequest } from '../api/types';
+import { CreateWorkflowRequest, WorkflowDefinitionResponse } from '../api/types';
 import { CopyableId } from '../components/common/CopyableId';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
 import { EmptyState } from '../components/common/EmptyState';
 import { ErrorAlert } from '../components/common/ErrorAlert';
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { formatDate } from '../utils/formatters';
 import { useAuth } from '../auth/AuthContext';
 import { GitBranch, Plus, RefreshCw, X } from 'lucide-react';
 
-export const WorkflowsPage: React.FC = () => {
+const WorkflowsView: React.FC = () => {
   const { canMutateTasks } = useAuth();
   const queryClient = useQueryClient();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const { data: workflows, isLoading, isError, error, refetch } = useQuery({
+  const {
+    data: workflowsData,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['workflows'],
-    queryFn: getWorkflows,
+    queryFn: () => getWorkflows({ page: 0, size: 50 }),
     refetchInterval: 15000,
   });
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const createMutation = useMutation({
     mutationFn: (req: CreateWorkflowRequest) => createWorkflow(req),
@@ -46,6 +63,13 @@ export const WorkflowsPage: React.FC = () => {
     createMutation.mutate({ name: name.trim(), description: description.trim() || undefined });
   };
 
+  // Defensively extract items whether backend returns PagedResponse or plain Array
+  const workflowItems: WorkflowDefinitionResponse[] = Array.isArray(workflowsData)
+    ? workflowsData
+    : (workflowsData && Array.isArray((workflowsData as any).items)
+        ? (workflowsData as any).items
+        : []);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* Header */}
@@ -55,7 +79,7 @@ export const WorkflowsPage: React.FC = () => {
             Workflow Definitions
           </h2>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            Directed Acyclic Graph (DAG) templates and immutable version namespaces
+            Define, inspect, version, and execute distributed DAG workflows
           </p>
         </div>
 
@@ -66,18 +90,31 @@ export const WorkflowsPage: React.FC = () => {
               <span>Register Workflow</span>
             </button>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={() => refetch()}>
-            <RefreshCw size={14} />
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            title="Refresh workflows"
+          >
+            <RefreshCw size={14} style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }} />
+            <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
           </button>
         </div>
       </div>
 
-      {isError && <ErrorAlert error={error} onRetry={() => refetch()} />}
+      {isError && (
+        <ErrorAlert
+          error={error}
+          onRetry={handleRefresh}
+          isRetrying={isRefreshing}
+          title="Unable to load workflow definitions"
+        />
+      )}
 
-      {/* Main Table */}
+      {/* Main Content Area */}
       {isLoading ? (
         <LoadingSkeleton rows={6} height="3rem" />
-      ) : !workflows || workflows.length === 0 ? (
+      ) : workflowItems.length === 0 ? (
         <EmptyState
           title="No workflow definitions registered"
           description="Register a workflow namespace to author versioned DAG graphs and dependency pipelines."
@@ -104,7 +141,7 @@ export const WorkflowsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {workflows.map((wf) => (
+              {workflowItems.map((wf) => (
                 <tr key={wf.workflowId}>
                   <td>
                     <Link to={`/workflows/${wf.workflowId}`} style={{ textDecoration: 'none' }}>
@@ -232,5 +269,13 @@ export const WorkflowsPage: React.FC = () => {
         </div>
       )}
     </div>
+  );
+};
+
+export const WorkflowsPage: React.FC = () => {
+  return (
+    <ErrorBoundary fallbackTitle="Workflow Management Console Error">
+      <WorkflowsView />
+    </ErrorBoundary>
   );
 };

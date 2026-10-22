@@ -47,7 +47,7 @@ export const DashboardPage: React.FC = () => {
 
   const workflowsQuery = useQuery({
     queryKey: ['workflows'],
-    queryFn: getWorkflows,
+    queryFn: () => getWorkflows(),
     refetchInterval: 30000,
   });
 
@@ -102,7 +102,9 @@ export const DashboardPage: React.FC = () => {
   const cluster = clusterQuery.data;
   const tasks = tasksQuery.data?.items || [];
   const workers = workersQuery.data || [];
-  const workflowCount = workflowsQuery.data?.length;
+  const workflowCount = Array.isArray(workflowsQuery.data)
+    ? workflowsQuery.data.length
+    : (workflowsQuery.data?.totalElements ?? workflowsQuery.data?.items?.length ?? 0);
   const dlqCount = dlqQuery.data?.totalElements;
 
   // Derive status counts from actual backend dataset

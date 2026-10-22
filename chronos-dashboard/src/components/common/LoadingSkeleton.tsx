@@ -11,6 +11,7 @@ export const LoadingSkeleton: React.FC<LoadingSkeletonProps> = ({ rows = 4, heig
       {Array.from({ length: rows }).map((_, idx) => (
         <div
           key={idx}
+          className="skeleton-row"
           style={{
             height,
             width: '100%',

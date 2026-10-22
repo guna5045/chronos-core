@@ -20,6 +20,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { SubmitTaskModal } from '../tasks/SubmitTaskModal';
+import { ErrorBoundary } from '../common/ErrorBoundary';
 
 export const AppShell: React.FC = () => {
   const { user, logout, canMutateTasks } = useAuth();
@@ -406,7 +407,9 @@ export const AppShell: React.FC = () => {
 
         {/* Content Area */}
         <main style={{ flex: 1, padding: '1.75rem 2rem', overflowY: 'auto', minWidth: 0 }}>
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
 
