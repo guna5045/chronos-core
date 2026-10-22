@@ -145,6 +145,12 @@ services:
       - chronos-coordinator
     ports:
       - "${CHRONOS_DASHBOARD_PORT:-5173}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     networks:
       - chronos-network
 

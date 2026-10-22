@@ -155,7 +155,7 @@ public class WorkerRuntime implements SmartLifecycle {
     private void startHeartbeatLoop() {
         this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "chronos-worker-heartbeat-" + workerProperties.getId());
-            t.setDaemon(true);
+            t.setDaemon(false);
             return t;
         });
 
