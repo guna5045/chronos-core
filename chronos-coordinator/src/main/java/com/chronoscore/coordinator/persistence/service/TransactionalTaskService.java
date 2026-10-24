@@ -218,6 +218,21 @@ public class TransactionalTaskService {
     }
 
     /**
+     * Determines the next physical attempt number for a task, ensuring strictly monotonic
+     * ordering even if the task was previously replayed from the Dead-Letter Queue.
+     */
+    public int getNextAttemptNumber(UUID taskId, int baseAttempt) {
+        int next = baseAttempt + 1;
+        if (attemptRepository != null && taskId != null) {
+            Optional<ExecutionAttempt> latest = attemptRepository.findLatestAttempt(taskId);
+            if (latest.isPresent() && latest.get().getAttemptNumber() >= next) {
+                return latest.get().getAttemptNumber() + 1;
+            }
+        }
+        return next;
+    }
+
+    /**
      * Atomically records the start of an execution attempt, transitioning the task to RUNNING
      * if applicable, and saving the execution attempt history row.
      *
@@ -239,6 +254,12 @@ public class TransactionalTaskService {
             throw new InvalidTaskTransitionException(taskId, TaskStatus.CANCELLED, TaskStatus.RUNNING);
         }
 
+        // If task already reached SUCCEEDED (e.g. fast completion reported concurrently), return attempt
+        if (currentTask.getStatus() == TaskStatus.SUCCEEDED) {
+            return attemptRepository.findByTaskIdAndAttemptNumber(taskId, attemptNumber)
+                    .orElseGet(() -> attemptRepository.findLatestAttempt(taskId).orElse(null));
+        }
+
         // Validate state transition to RUNNING. If currently QUEUED, transition through DISPATCHED first
         TaskStatus targetStatus = TaskStatus.RUNNING;
         if (currentTask.getStatus() == TaskStatus.QUEUED) {
@@ -248,9 +269,17 @@ public class TransactionalTaskService {
             TaskStateMachine.transition(taskId, currentTask.getStatus(), targetStatus);
         }
 
+        int effectiveAttempt = attemptNumber;
+        if (attemptRepository != null) {
+            Optional<ExecutionAttempt> latest = attemptRepository.findLatestAttempt(taskId);
+            if (latest.isPresent() && latest.get().getAttemptNumber() >= effectiveAttempt) {
+                effectiveAttempt = latest.get().getAttemptNumber() + 1;
+            }
+        }
+
         Task updatedTask = currentTask.toBuilder()
                 .status(targetStatus)
-                .currentAttempt(attemptNumber)
+                .currentAttempt(effectiveAttempt)
                 .build();
         Task persistedTask = taskRepository.update(updatedTask);
 
@@ -259,7 +288,7 @@ public class TransactionalTaskService {
                 .attemptId(UUID.randomUUID())
                 .taskId(taskId)
                 .workerId(workerId)
-                .attemptNumber(attemptNumber)
+                .attemptNumber(effectiveAttempt)
                 .status(ExecutionAttemptStatus.RUNNING)
                 .startedAt(Instant.now())
                 .build();

@@ -8,8 +8,6 @@ COPY chronos-ai/pom.xml ./chronos-ai/
 COPY chronos-coordinator/pom.xml ./chronos-coordinator/
 COPY chronos-worker/pom.xml ./chronos-worker/
 
-RUN mvn dependency:go-offline -B -pl chronos-worker -am
-
 COPY chronos-common/src ./chronos-common/src
 COPY chronos-ai/src ./chronos-ai/src
 COPY chronos-worker/src ./chronos-worker/src

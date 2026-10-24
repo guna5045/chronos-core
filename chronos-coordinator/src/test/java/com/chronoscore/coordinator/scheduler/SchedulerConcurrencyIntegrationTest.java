@@ -147,6 +147,8 @@ class SchedulerConcurrencyIntegrationTest {
             }
         };
 
+        org.mockito.Mockito.lenient().when(transactionalTaskService.getNextAttemptNumber(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())).thenAnswer(inv -> (int) inv.getArgument(1) + 1);
+
         // Mutate repository state in transactionalTaskService mock
         when(transactionalTaskService.startExecutionAttempt(eq(taskId), anyString(), eq(1)))
                 .thenAnswer(invocation -> {

@@ -411,7 +411,7 @@ public class LeaderAwareTaskScheduler implements TaskScheduler, LeadershipStateL
             }
 
             WorkerNode targetWorker = workerOpt.get();
-            int nextAttempt = currentTask.getCurrentAttempt() + 1;
+            int nextAttempt = transactionalTaskService.getNextAttemptNumber(currentTask.getTaskId(), currentTask.getCurrentAttempt());
 
             // 9. Build Protobuf TaskAssignment payload
             ProtoTask protoTask = ProtoTask.newBuilder()

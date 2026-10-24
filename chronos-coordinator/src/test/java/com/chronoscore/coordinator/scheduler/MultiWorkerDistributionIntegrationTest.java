@@ -182,6 +182,8 @@ class MultiWorkerDistributionIntegrationTest {
                             .build();
                 });
 
+        org.mockito.Mockito.lenient().when(transactionalTaskService.getNextAttemptNumber(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyInt())).thenAnswer(inv -> (int) inv.getArgument(1) + 1);
+
         when(transactionalTaskService.startExecutionAttempt(any(UUID.class), anyString(), eq(1)))
                 .thenAnswer(invocation -> {
                     UUID id = invocation.getArgument(0);

@@ -10,6 +10,7 @@ import { EmptyState } from '../components/common/EmptyState';
 import { ErrorAlert } from '../components/common/ErrorAlert';
 import { formatDate, formatTimeRelative } from '../utils/formatters';
 import { Cpu, RefreshCw, Server, Zap } from 'lucide-react';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 export const WorkersPage: React.FC = () => {
   const workersQuery = useQuery({
@@ -40,10 +41,13 @@ export const WorkersPage: React.FC = () => {
           </p>
         </div>
 
-        <button className="btn btn-secondary btn-sm" onClick={() => workersQuery.refetch()}>
-          <RefreshCw size={14} />
-          <span>Refresh</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <LearnAboutPageButton pageId="workers" />
+          <button className="btn btn-secondary btn-sm" onClick={() => workersQuery.refetch()}>
+            <RefreshCw size={14} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {workersQuery.isError && (

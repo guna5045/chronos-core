@@ -19,6 +19,7 @@ import {
   RefreshCw,
   X,
 } from 'lucide-react';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 export const DlqPage: React.FC = () => {
   const { canMutateTasks } = useAuth();
@@ -85,10 +86,13 @@ export const DlqPage: React.FC = () => {
           </p>
         </div>
 
-        <button className="btn btn-secondary btn-sm" onClick={() => refetch()}>
-          <RefreshCw size={14} />
-          <span>Refresh</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <LearnAboutPageButton pageId="dlq" />
+          <button className="btn btn-secondary btn-sm" onClick={() => refetch()}>
+            <RefreshCw size={14} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {isError && <ErrorAlert error={error} onRetry={() => refetch()} />}

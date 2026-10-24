@@ -22,6 +22,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 export const DashboardPage: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -153,6 +154,7 @@ export const DashboardPage: React.FC = () => {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <LearnAboutPageButton pageId="overview" />
           <button
             onClick={handleRefreshAll}
             disabled={isRefreshing}

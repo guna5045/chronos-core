@@ -59,7 +59,8 @@ services:
       CHRONOS_JWT_SECRET: ${CHRONOS_JWT_SECRET:-chronos-core-distributed-orchestration-dev-secret-key-32bytes-minimum}
       SPRING_PROFILES_ACTIVE: prod
       CHRONOS_COORDINATOR_GRPC_PORT: 9090
-      CHRONOS_AI_ENABLED: ${CHRONOS_AI_ENABLED:-false}
+      CHRONOS_AI_ENABLED: ${CHRONOS_AI_ENABLED:-true}
+      CHRONOS_AI_PROVIDER: ${CHRONOS_AI_PROVIDER:-stub}
     ports:
       - "${CHRONOS_COORDINATOR_PORT:-8080}:8080"
       - "9090:9090"

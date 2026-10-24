@@ -21,6 +21,7 @@ import { TenantPolicyPage } from './pages/TenantPolicyPage';
 import { AiWorkflowsPage } from './pages/AiWorkflowsPage';
 import { AiOperationsPage } from './pages/AiOperationsPage';
 import { ObservabilityPage } from './pages/ObservabilityPage';
+import { DocumentationPage } from './pages/DocumentationPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -71,6 +72,8 @@ export const App: React.FC = () => {
               <Route path="observability" element={<ObservabilityPage />} />
               <Route path="ai/workflows" element={<AiWorkflowsPage />} />
               <Route path="ai/operations" element={<AiOperationsPage />} />
+              <Route path="documentation" element={<DocumentationPage />} />
+              <Route path="documentation/:conceptId" element={<DocumentationPage />} />
             </Route>
 
             {/* Catch-all Fallback */}

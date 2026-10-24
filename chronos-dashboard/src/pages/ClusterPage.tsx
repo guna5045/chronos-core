@@ -8,6 +8,7 @@ import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
 import { ErrorAlert } from '../components/common/ErrorAlert';
 import { Link } from 'react-router-dom';
 import { Cpu, RefreshCw, Server, Shield, Zap } from 'lucide-react';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 export const ClusterPage: React.FC = () => {
   const clusterQuery = useQuery({
@@ -48,10 +49,13 @@ export const ClusterPage: React.FC = () => {
           </p>
         </div>
 
-        <button className="btn btn-secondary btn-sm" onClick={() => { clusterQuery.refetch(); workersQuery.refetch(); }}>
-          <RefreshCw size={14} />
-          <span>Refresh</span>
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <LearnAboutPageButton pageId="cluster" />
+          <button className="btn btn-secondary btn-sm" onClick={() => { clusterQuery.refetch(); workersQuery.refetch(); }}>
+            <RefreshCw size={14} />
+            <span>Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Cluster Overview Cards */}

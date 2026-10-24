@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import {
   Activity,
+  BookOpen,
   Bot,
   CheckCircle2,
   Cpu,
@@ -72,6 +73,10 @@ export const AppShell: React.FC = () => {
   const aiNavItems = [
     { label: 'Workflow Agent', to: '/ai/workflows', icon: <Bot size={17} /> },
     { label: 'Operations Agent', to: '/ai/operations', icon: <ShieldAlert size={17} /> },
+  ];
+
+  const documentationNav = [
+    { label: 'Documentation', to: '/documentation', icon: <BookOpen size={17} /> },
   ];
 
   return (
@@ -360,6 +365,43 @@ export const AppShell: React.FC = () => {
               AI Assistants
             </span>
             {aiNavItems.map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                style={({ isActive }) => ({
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.5rem 0.75rem',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.8125rem',
+                  fontWeight: 500,
+                  color: isActive ? 'var(--text-main)' : 'var(--text-muted)',
+                  backgroundColor: isActive ? 'var(--bg-active)' : 'transparent',
+                  border: isActive ? '1px solid var(--border-default)' : '1px solid transparent',
+                  textDecoration: 'none',
+                  transition: 'all 0.15s ease',
+                })}
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+
+            {/* Section 5: Documentation */}
+            <span
+              style={{
+                fontSize: '0.65rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                fontWeight: 700,
+                color: 'var(--text-faint)',
+                padding: '0.85rem 0.75rem 0.4rem',
+              }}
+            >
+              Documentation
+            </span>
+            {documentationNav.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}

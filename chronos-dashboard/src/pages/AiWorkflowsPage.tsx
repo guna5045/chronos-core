@@ -22,6 +22,7 @@ import {
   ThumbsUp,
   XCircle,
 } from 'lucide-react';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 const SAMPLE_PROMPTS = [
   {
@@ -197,6 +198,7 @@ export const AiWorkflowsPage: React.FC = () => {
             </span>
           </div>
 
+          <LearnAboutPageButton pageId="ai-workflows" />
           <button className="btn btn-secondary btn-sm" onClick={() => refetchProposals()} title="Refresh Proposals">
             <RefreshCw size={14} />
           </button>

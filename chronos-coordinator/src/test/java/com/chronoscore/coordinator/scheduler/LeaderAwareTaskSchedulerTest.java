@@ -76,6 +76,8 @@ class LeaderAwareTaskSchedulerTest {
         schedulerProperties.setDispatchTimeout(Duration.ofSeconds(2));
         schedulerProperties.setTaskLockTtl(Duration.ofSeconds(10));
 
+        org.mockito.Mockito.lenient().when(transactionalTaskService.getNextAttemptNumber(any(), anyInt())).thenAnswer(inv -> (int) inv.getArgument(1) + 1);
+
         scheduler = new LeaderAwareTaskScheduler(
                 leaderElectionService,
                 fencingTokenService,

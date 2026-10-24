@@ -143,9 +143,26 @@ public class TaskRecoveryService {
         // Find the physical attempt record
         Optional<ExecutionAttempt> attemptOpt = attemptRepository.findByTaskIdAndAttemptNumber(taskId, reportedAttemptNumber);
         if (attemptOpt.isEmpty()) {
+            // A worker executing a lightweight task can finish and report completion over gRPC before the
+            // coordinator's dispatch transaction has fully committed to PostgreSQL.
+            for (int retry = 0; retry < 10 && attemptOpt.isEmpty(); retry++) {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                attemptOpt = attemptRepository.findByTaskIdAndAttemptNumber(taskId, reportedAttemptNumber);
+            }
+        }
+
+        if (attemptOpt.isEmpty()) {
             log.warn("Execution attempt #{} not found for task '{}'", reportedAttemptNumber, taskId);
             return false;
         }
+
+        // Re-read task to observe state changes committed by the dispatch transaction
+        currentTask = taskRepository.findById(taskId).orElse(currentTask);
 
         ExecutionAttempt attempt = attemptOpt.get();
         boolean isSuccess = result.getStatus() == ProtoExecutionStatus.EXECUTION_STATUS_SUCCEEDED;
@@ -155,7 +172,14 @@ public class TaskRecoveryService {
             ExecutionAttempt succeededAttempt = attempt.withSuccess(completedAt);
             attemptRepository.update(succeededAttempt);
 
-            TaskStateMachine.transition(taskId, currentTask.getStatus(), TaskStatus.SUCCEEDED);
+            if (currentTask.getStatus() == TaskStatus.QUEUED) {
+                TaskStateMachine.transition(taskId, TaskStatus.QUEUED, TaskStatus.DISPATCHED);
+                TaskStateMachine.transition(taskId, TaskStatus.DISPATCHED, TaskStatus.RUNNING);
+            } else if (currentTask.getStatus() == TaskStatus.DISPATCHED) {
+                TaskStateMachine.transition(taskId, TaskStatus.DISPATCHED, TaskStatus.RUNNING);
+            }
+
+            TaskStateMachine.transition(taskId, TaskStatus.RUNNING, TaskStatus.SUCCEEDED);
             Task updatedTask = currentTask.toBuilder()
                     .status(TaskStatus.SUCCEEDED)
                     .build();
@@ -222,7 +246,14 @@ public class TaskRecoveryService {
                 reason = "Attempt #" + reportedAttemptNumber + " failed (" + errorCode + "); retries exhausted or non-retryable; moved to DLQ";
             }
 
-            TaskStateMachine.transition(taskId, currentTask.getStatus(), TaskStatus.FAILED);
+            if (currentTask.getStatus() == TaskStatus.QUEUED) {
+                TaskStateMachine.transition(taskId, TaskStatus.QUEUED, TaskStatus.DISPATCHED);
+                TaskStateMachine.transition(taskId, TaskStatus.DISPATCHED, TaskStatus.RUNNING);
+            } else if (currentTask.getStatus() == TaskStatus.DISPATCHED) {
+                TaskStateMachine.transition(taskId, TaskStatus.DISPATCHED, TaskStatus.RUNNING);
+            }
+
+            TaskStateMachine.transition(taskId, TaskStatus.RUNNING, TaskStatus.FAILED);
             TaskStateMachine.transition(taskId, TaskStatus.FAILED, nextStatus);
 
             Task updatedTask = currentTask.toBuilder()

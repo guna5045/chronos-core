@@ -68,7 +68,6 @@ The Continuous Integration (CI) pipeline is defined in [`.github/workflows/ci.ym
 ---
 
 ## 3. Security & Quality Controls
-
 - **Least Privilege**: The workflow operates under `permissions: contents: read`.
 - **No Inlined Secrets**: Zero tokens, passwords, or private keys are embedded in workflow definitions or log statements.
 - **Concurrency Control**: `concurrency: group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true` prevents redundant resource consumption by canceling outdated in-flight runs.

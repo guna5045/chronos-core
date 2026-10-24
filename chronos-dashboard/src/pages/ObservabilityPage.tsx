@@ -10,6 +10,7 @@ import {
 import { MetricCard } from '../components/common/MetricCard';
 import { ErrorAlert } from '../components/common/ErrorAlert';
 import { getClusterOverview } from '../api/cluster';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 export const ObservabilityPage: React.FC = () => {
   const clusterQuery = useQuery({
@@ -52,7 +53,8 @@ export const ObservabilityPage: React.FC = () => {
             Micrometer metrics, Prometheus scrapers, OpenTelemetry distributed tracing, and chaos verification
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <LearnAboutPageButton pageId="observability" />
           <a
             href="/actuator/prometheus"
             target="_blank"

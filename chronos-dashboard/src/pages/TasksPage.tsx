@@ -20,6 +20,7 @@ import {
   Slash,
 } from 'lucide-react';
 import { SubmitTaskModal } from '../components/tasks/SubmitTaskModal';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 export const TasksPage: React.FC = () => {
   const { canMutateTasks } = useAuth();
@@ -98,6 +99,7 @@ export const TasksPage: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <LearnAboutPageButton pageId="tasks" />
           {canMutateTasks && (
             <button className="btn btn-primary" onClick={() => setIsSubmitOpen(true)}>
               <Plus size={16} />

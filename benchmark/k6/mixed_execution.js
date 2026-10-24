@@ -48,7 +48,7 @@ export default function () {
   }
 
   // 3. Cluster overview telemetry query
-  const clusterRes = http.get(`${BASE_URL}/cluster/overview`, { headers });
+  const clusterRes = http.get(`${BASE_URL}/cluster`, { headers });
   check(clusterRes, {
     'cluster telemetry query succeeded': (r) => r.status === 200,
   });

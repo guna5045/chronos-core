@@ -12,6 +12,7 @@ import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { formatDate } from '../utils/formatters';
 import { useAuth } from '../auth/AuthContext';
 import { GitBranch, Plus, RefreshCw, X } from 'lucide-react';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 const WorkflowsView: React.FC = () => {
   const { canMutateTasks } = useAuth();
@@ -84,6 +85,7 @@ const WorkflowsView: React.FC = () => {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <LearnAboutPageButton pageId="workflows" />
           {canMutateTasks && (
             <button className="btn btn-primary" onClick={() => setIsCreateOpen(true)}>
               <Plus size={16} />

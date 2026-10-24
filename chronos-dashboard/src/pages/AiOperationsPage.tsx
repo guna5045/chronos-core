@@ -31,6 +31,7 @@ import {
   ThumbsDown,
   ThumbsUp,
 } from 'lucide-react';
+import { LearnAboutPageButton } from '../components/docs/LearnAboutPageButton';
 
 const SEVERITY_COLORS: Record<AiIncidentSeverity, { bg: string; text: string; border: string }> = {
   INFO: { bg: 'rgba(56, 189, 248, 0.1)', text: 'var(--accent-cyan)', border: 'rgba(56, 189, 248, 0.3)' },
@@ -206,6 +207,7 @@ export const AiOperationsPage: React.FC = () => {
             </span>
           </div>
 
+          <LearnAboutPageButton pageId="ai-operations" />
           <button className="btn btn-secondary btn-sm" onClick={() => refetchActions()} title="Refresh Actions">
             <RefreshCw size={14} />
           </button>
