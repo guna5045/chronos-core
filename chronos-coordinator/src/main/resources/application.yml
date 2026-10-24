@@ -73,6 +73,8 @@ chronos:
     jwt-secret: ${CHRONOS_JWT_SECRET:chronos-core-distributed-orchestration-dev-secret-key-32bytes-minimum}
     issuer: ${CHRONOS_JWT_ISSUER:chronos-core}
     token-validity-seconds: ${CHRONOS_JWT_VALIDITY:3600}
+    dev-auth:
+      enabled: ${CHRONOS_DEV_AUTH_ENABLED:true}
 
 server:
   port: 8080

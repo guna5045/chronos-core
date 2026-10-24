@@ -1,5 +1,6 @@
 package com.chronoscore.coordinator.api.security;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -12,9 +13,16 @@ import java.util.Map;
 /**
  * Development token controller allowing local developers and test suites
  * to issue valid signed JWT bearer tokens without requiring a real external identity provider.
+ * <p>
+ * Strictly disabled in production via {@code chronos.security.dev-auth.enabled=false}.
  */
 @RestController
 @RequestMapping("/api/v1/auth")
+@ConditionalOnProperty(
+        name = "chronos.security.dev-auth.enabled",
+        havingValue = "true",
+        matchIfMissing = false
+)
 public class DevAuthController {
 
     private final DevJwtTokenHelper tokenHelper;

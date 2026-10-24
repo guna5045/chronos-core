@@ -43,12 +43,37 @@ public class JwtSecurityProperties {
             "http://127.0.0.1:3000"
     );
 
+    /**
+     * Development authentication configuration.
+     */
+    private DevAuth devAuth = new DevAuth();
+
+    public static class DevAuth {
+        private boolean enabled = true;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public DevAuth getDevAuth() {
+        return devAuth;
+    }
+
+    public void setDevAuth(DevAuth devAuth) {
+        this.devAuth = devAuth;
     }
 
     public String getJwtSecret() {

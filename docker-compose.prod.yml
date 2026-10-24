@@ -1,0 +1,236 @@
+# ==============================================================================
+# CHRONOS CORE — PRODUCTION DOCKER COMPOSE CONFIGURATION (Hardened)
+# Usage: docker compose -f docker-compose.prod.yml --env-file .env.production up -d
+#
+# SECURITY ARCHITECTURE:
+# - PUBLIC: Only chronos-dashboard reverse-proxy HTTP port is exposed (port 80).
+# - PROTECTED: Grafana is bound exclusively to loopback (127.0.0.1:3000) for secure bastion/VPN access.
+# - PRIVATE: Postgres, Redis, Coordinator REST/gRPC, Workers, Prometheus, and OTel
+#            run strictly on the internal isolated bridge network (no host ports).
+# - FAIL-FAST: Missing required secrets abort startup immediately via required-variable syntax.
+# ==============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: chronos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${CHRONOS_DB_NAME:-chronos_core}
+      POSTGRES_USER: ${CHRONOS_DB_USERNAME:-chronos_user}
+      POSTGRES_PASSWORD: ${CHRONOS_DB_PASSWORD:?CHRONOS_DB_PASSWORD is required}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    # Hardening: Port 5432 is strictly internal; NOT published to host
+    volumes:
+      - chronos_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHRONOS_DB_USERNAME:-chronos_user} -d ${CHRONOS_DB_NAME:-chronos_core}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - chronos-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: chronos-redis
+    restart: unless-stopped
+    # Hardening: Conditional requirepass if CHRONOS_REDIS_PASSWORD is provided; AOF + RDB persistence active
+    command: >
+      sh -c "if [ -n \"$${CHRONOS_REDIS_PASSWORD}\" ]; then
+               redis-server --appendonly yes --save 60 1 --loglevel notice --requirepass \"$$CHRONOS_REDIS_PASSWORD\";
+             else
+               redis-server --appendonly yes --save 60 1 --loglevel notice;
+             fi"
+    environment:
+      CHRONOS_REDIS_PASSWORD: ${CHRONOS_REDIS_PASSWORD:-}
+    # Hardening: Port 6379 is strictly internal; NOT published to host
+    volumes:
+      - chronos_redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "if [ -n \"$$CHRONOS_REDIS_PASSWORD\" ]; then redis-cli -a \"$$CHRONOS_REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks:
+      - chronos-network
+
+  chronos-coordinator:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/coordinator.Dockerfile
+    container_name: chronos-coordinator
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      CHRONOS_DB_HOST: postgres
+      CHRONOS_DB_PORT: 5432
+      CHRONOS_DB_NAME: ${CHRONOS_DB_NAME:-chronos_core}
+      CHRONOS_DB_USERNAME: ${CHRONOS_DB_USERNAME:-chronos_user}
+      CHRONOS_DB_PASSWORD: ${CHRONOS_DB_PASSWORD:?CHRONOS_DB_PASSWORD is required}
+      CHRONOS_DB_SSL_MODE: ${CHRONOS_DB_SSL_MODE:-require}
+      CHRONOS_DB_URL: ${CHRONOS_DB_URL:-jdbc:postgresql://postgres:5432/${CHRONOS_DB_NAME:-chronos_core}?sslmode=${CHRONOS_DB_SSL_MODE:-require}}
+      CHRONOS_REDIS_HOST: redis
+      CHRONOS_REDIS_PORT: 6379
+      CHRONOS_REDIS_PASSWORD: ${CHRONOS_REDIS_PASSWORD:-}
+      CHRONOS_JWT_SECRET: ${CHRONOS_JWT_SECRET:?CHRONOS_JWT_SECRET is required}
+      CHRONOS_JWT_ISSUER: ${CHRONOS_JWT_ISSUER:-chronos-core}
+      CHRONOS_JWT_VALIDITY: ${CHRONOS_JWT_VALIDITY:-3600}
+      CHRONOS_DEV_AUTH_ENABLED: "false"
+      CHRONOS_COORDINATOR_PORT: 8080
+      CHRONOS_COORDINATOR_GRPC_PORT: 9090
+      CHRONOS_CORS_ALLOWED_ORIGINS: ${CHRONOS_CORS_ALLOWED_ORIGINS:-http://localhost:80,http://chronos-dashboard}
+      CHRONOS_AI_ENABLED: ${CHRONOS_AI_ENABLED:-false}
+      CHRONOS_AI_PROVIDER: ${CHRONOS_AI_PROVIDER:-stub}
+      CHRONOS_AI_API_KEY: ${CHRONOS_AI_API_KEY:-}
+    # Hardening: Ports 8080 (REST) and 9090 (gRPC) are internal only; reverse-proxied via dashboard Nginx
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health/liveness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+    networks:
+      - chronos-network
+
+  chronos-worker-1:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/worker.Dockerfile
+    container_name: chronos-worker-1
+    restart: unless-stopped
+    depends_on:
+      chronos-coordinator:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      CHRONOS_WORKER_ID: worker-1
+      CHRONOS_WORKER_HOSTNAME: chronos-worker-1
+      CHRONOS_WORKER_PORT: 9091
+      CHRONOS_COORDINATOR_HOST: chronos-coordinator
+      CHRONOS_COORDINATOR_PORT: 9090
+      CHRONOS_WORKER_MAX_CONCURRENCY: ${CHRONOS_WORKER_MAX_CONCURRENCY:-8}
+    # Hardening: Worker management port 8081 is internal; NOT published to host
+    networks:
+      - chronos-network
+
+  chronos-worker-2:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/worker.Dockerfile
+    container_name: chronos-worker-2
+    restart: unless-stopped
+    depends_on:
+      chronos-coordinator:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      CHRONOS_WORKER_ID: worker-2
+      CHRONOS_WORKER_HOSTNAME: chronos-worker-2
+      CHRONOS_WORKER_PORT: 9092
+      CHRONOS_COORDINATOR_HOST: chronos-coordinator
+      CHRONOS_COORDINATOR_PORT: 9090
+      CHRONOS_WORKER_MAX_CONCURRENCY: ${CHRONOS_WORKER_MAX_CONCURRENCY:-8}
+    # Hardening: Worker management port 8082 is internal; NOT published to host
+    networks:
+      - chronos-network
+
+  chronos-worker-3:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/worker.Dockerfile
+    container_name: chronos-worker-3
+    restart: unless-stopped
+    depends_on:
+      chronos-coordinator:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      CHRONOS_WORKER_ID: worker-3
+      CHRONOS_WORKER_HOSTNAME: chronos-worker-3
+      CHRONOS_WORKER_PORT: 9093
+      CHRONOS_COORDINATOR_HOST: chronos-coordinator
+      CHRONOS_COORDINATOR_PORT: 9090
+      CHRONOS_WORKER_MAX_CONCURRENCY: ${CHRONOS_WORKER_MAX_CONCURRENCY:-8}
+    # Hardening: Worker management port 8083 is internal; NOT published to host
+    networks:
+      - chronos-network
+
+  chronos-dashboard:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/dashboard.Dockerfile
+    container_name: chronos-dashboard
+    restart: unless-stopped
+    depends_on:
+      - chronos-coordinator
+    # PUBLIC: Only the dashboard / reverse proxy port is published to the outside world
+    ports:
+      - "${CHRONOS_DASHBOARD_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    networks:
+      - chronos-network
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: chronos-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    # Hardening: Port 9090 is strictly internal; scraped within chronos-network
+    networks:
+      - chronos-network
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: chronos-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    # Hardening: Bound strictly to loopback (127.0.0.1) by default; not exposed on 0.0.0.0
+    ports:
+      - "${GRAFANA_BIND_ADDRESS:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - chronos-network
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    container_name: chronos-otel-collector
+    restart: unless-stopped
+    profiles:
+      - observability-otel
+    volumes:
+      - ./infrastructure/opentelemetry/otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
+    # Hardening: Ingestion ports are strictly internal; NOT published to host
+    networks:
+      - chronos-network
+
+volumes:
+  chronos_pgdata:
+    name: chronos_pgdata
+  chronos_redisdata:
+    name: chronos_redisdata
+
+networks:
+  chronos-network:
+    name: chronos-network
+    driver: bridge

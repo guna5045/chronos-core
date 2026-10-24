@@ -36,6 +36,7 @@ dist-ssr/
 .env
 .env.*
 !.env.example
+!.env.production.example
 *.pem
 *.key
 *.pkcs12

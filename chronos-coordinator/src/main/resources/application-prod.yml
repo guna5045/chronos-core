@@ -7,9 +7,9 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 20s
   datasource:
-    url: ${CHRONOS_DB_URL:jdbc:postgresql://postgres:5432/chronos_core}
+    url: ${CHRONOS_DB_URL:jdbc:postgresql://${CHRONOS_DB_HOST:postgres}:${CHRONOS_DB_PORT:5432}/${CHRONOS_DB_NAME:chronos_core}?sslmode=${CHRONOS_DB_SSL_MODE:require}}
     username: ${CHRONOS_DB_USERNAME:chronos_user}
-    password: ${CHRONOS_DB_PASSWORD:chronos_dev_pass}
+    password: ${CHRONOS_DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       pool-name: ChronosCoordinatorProdHikariCP
@@ -86,6 +86,8 @@ chronos:
     jwt-secret: ${CHRONOS_JWT_SECRET}
     issuer: ${CHRONOS_JWT_ISSUER:chronos-core}
     token-validity-seconds: ${CHRONOS_JWT_VALIDITY:3600}
+    dev-auth:
+      enabled: ${CHRONOS_DEV_AUTH_ENABLED:false}
     cors:
       allowed-origins: ${CHRONOS_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:80,http://chronos-dashboard}
   ai:
