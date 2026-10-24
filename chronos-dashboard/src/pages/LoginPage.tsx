@@ -15,7 +15,7 @@ export const LoginPage: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<'ADMIN' | 'OPERATOR' | 'VIEWER'>('OPERATOR');
   const [tenantId, setTenantId] = useState('tenant-alpha');
   const [customToken, setCustomToken] = useState('');
-  const [isManualToken, setIsManualToken] = useState(false);
+  const [isManualToken, setIsManualToken] = useState<boolean>(() => Boolean(import.meta.env.PROD));
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -40,7 +40,10 @@ export const LoginPage: React.FC = () => {
       login(authToken, subject.trim(), [selectedRole], tenantId.trim());
       navigate(from, { replace: true });
     } catch (err) {
-      if (err instanceof ApiClientError) {
+      if (err instanceof ApiClientError && (err.status === 404 || err.code === 'NOT_FOUND')) {
+        setErrorMessage('Dev Auth is disabled in production. Please use a Bearer JWT token.');
+        setIsManualToken(true);
+      } else if (err instanceof ApiClientError) {
         setErrorMessage(`${err.code}: ${err.message}`);
       } else if (err instanceof Error) {
         setErrorMessage(err.message);
@@ -132,23 +135,6 @@ export const LoginPage: React.FC = () => {
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', marginBottom: '1.25rem' }}>
           <button
             type="button"
-            onClick={() => setIsManualToken(false)}
-            style={{
-              flex: 1,
-              padding: '0.65rem',
-              background: 'none',
-              border: 'none',
-              borderBottom: !isManualToken ? '2px solid var(--accent-cyan)' : '2px solid transparent',
-              color: !isManualToken ? 'var(--text-main)' : 'var(--text-muted)',
-              fontWeight: 500,
-              fontSize: '0.8125rem',
-              cursor: 'pointer',
-            }}
-          >
-            Dev Profile Auth
-          </button>
-          <button
-            type="button"
             onClick={() => setIsManualToken(true)}
             style={{
               flex: 1,
@@ -163,6 +149,23 @@ export const LoginPage: React.FC = () => {
             }}
           >
             Custom Bearer Token
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsManualToken(false)}
+            style={{
+              flex: 1,
+              padding: '0.65rem',
+              background: 'none',
+              border: 'none',
+              borderBottom: !isManualToken ? '2px solid var(--accent-cyan)' : '2px solid transparent',
+              color: !isManualToken ? 'var(--text-main)' : 'var(--text-muted)',
+              fontWeight: 500,
+              fontSize: '0.8125rem',
+              cursor: 'pointer',
+            }}
+          >
+            Local Dev / Staging Only
           </button>
         </div>
 

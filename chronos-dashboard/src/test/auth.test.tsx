@@ -5,6 +5,8 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider, useAuth } from '../auth/AuthContext';
 import { ProtectedRoute } from '../auth/ProtectedRoute';
 import { request, ApiClientError } from '../api/client';
+import { LoginPage } from '../pages/LoginPage';
+import * as authApi from '../api/auth';
 
 const TestAuthConsumer: React.FC = () => {
   const { user, isAuthenticated, isAdmin, isOperator, isViewer, login, logout } = useAuth();
@@ -175,5 +177,61 @@ describe('Frontend Authentication & Context', () => {
 
     expect(screen.queryByTestId('admin-content')).toBeNull();
     expect(screen.getByText('Access Restricted')).toBeInTheDocument();
+  });
+
+  it('gracefully handles 404 when Dev Auth is disabled and switches to Custom Bearer Token tab', async () => {
+    vi.spyOn(authApi, 'requestDevToken').mockRejectedValue(
+      new ApiClientError({
+        timestamp: new Date().toISOString(),
+        status: 404,
+        code: 'NOT_FOUND',
+        message: 'Dev Auth endpoint disabled',
+        path: '/auth/token',
+      })
+    );
+
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/login']}>
+          <LoginPage />
+        </MemoryRouter>
+      </AuthProvider>
+    );
+
+    // Click "Local Dev / Staging Only" tab
+    const devTab = screen.getByText('Local Dev / Staging Only');
+    act(() => {
+      devTab.click();
+    });
+
+    // Submit dev login
+    const submitBtn = screen.getByText('Authenticate & Enter Console');
+    act(() => {
+      submitBtn.click();
+    });
+
+    // Should display graceful message and auto-switch to Custom Bearer Token tab
+    expect(
+      await screen.findByText('Dev Auth is disabled in production. Please use a Bearer JWT token.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('Raw Bearer JWT Token')).toBeInTheDocument();
+    expect(screen.getByText('Use Bearer Token')).toBeInTheDocument();
+  });
+
+  it('formats network error message with dynamic BASE_URL without hardcoded localhost:8080', async () => {
+    const mockFetch = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+    global.fetch = mockFetch;
+
+    await expect(request('/health')).rejects.toThrow(ApiClientError);
+    try {
+      await request('/health');
+    } catch (e: unknown) {
+      if (e instanceof ApiClientError) {
+        expect(e.message).toContain('Failed to fetch');
+        expect(e.message).not.toContain('http://localhost:8080');
+      } else {
+        throw e;
+      }
+    }
   });
 });

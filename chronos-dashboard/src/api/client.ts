@@ -57,7 +57,7 @@ export async function request<T>(
       timestamp: new Date().toISOString(),
       status: 0,
       code: 'NETWORK_ERROR',
-      message: `Unable to reach Chronos Core coordinator (${rawError}). Please verify the backend service is running on http://localhost:8080.`,
+      message: `Unable to reach Chronos Core coordinator (${rawError}). Please verify the backend service is running on ${BASE_URL}.`,
       path: endpoint,
       requestId: headers.get('X-Request-Id') || undefined,
     };
@@ -111,7 +111,7 @@ export async function request<T>(
           timestamp: new Date().toISOString(),
           status: response.status === 500 ? 503 : response.status,
           code: 'COORDINATOR_UNREACHABLE',
-          message: 'Chronos Core coordinator process is unreachable (connection refused on http://localhost:8080).',
+          message: `Chronos Core coordinator process is unreachable (connection refused on ${BASE_URL}).`,
           path: endpoint,
           requestId: respRequestId,
           traceId: respTraceId,
